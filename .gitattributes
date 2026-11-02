@@ -1,0 +1,4 @@
+# Keep Linux line endings for scripts that run on the Pi, whatever machine commits them.
+*.sh text eol=lf
+*.py text eol=lf
+web/* text eol=lf

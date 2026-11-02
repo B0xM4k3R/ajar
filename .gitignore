@@ -1,0 +1,13 @@
+# Sensitive local data
+ajar.db
+ajar.auth
+ajar.crt
+ajar.key
+*.db
+*.auth
+
+# Python cache
+__pycache__/
+*.pyc
+.backup_ui/
+*.bak

@@ -21,9 +21,14 @@ KINDS = [
 ]
 
 
-def guess_kind(mac, vendor, ip, gw):
+def guess_kind(mac, vendor, ip, gw, hostname=""):
     if ip == gw:
         return "router"
+    # Check if the hostname gives it away (e.g., "Samsung-TV")
+    h = (hostname or "").lower()
+    if "tv" in h or "television" in h:
+        return "tv"
+        
     v = (vendor or "").lower()
     for kind, words in KINDS:
         if any(w in v for w in words):

@@ -24,9 +24,9 @@
   </div>
   <div id="netbar" class="netbar"></div>
   <div class="btns">
-    <button id="scan" title="Find devices on your network. Fast.">Find devices</button>
-    <button id="audit" class="quiet" title="Scan ports and check services, CVEs, and logins. Reuses recent deep scans to be fast.">Quick scan</button>
-    <button id="fullAudit" class="quiet" title="Force a fresh, deep scan of every port on every device. Takes longer.">Deep scan</button>
+    <button id="scan" title="Find devices on your network. Fast.">Map Network</button>
+    <button id="audit" class="quiet" title="Scan ports and check services, CVEs, and logins. Reuses recent deep scans to be fast.">Standard Scan</button>
+    <button id="fullAudit" class="quiet" title="Force a fresh, deep scan of every port on every device. Takes longer.">Deep Scan</button>
     <button id="stopScan" class="quiet" style="display:none; border-color:var(--high); color:var(--high)">Stop</button>
   </div>
 </header>
@@ -52,7 +52,6 @@
 <section id="wifi" hidden>
   <div class="sechead">
     <span class="sub" id="wifiSub">Loading…</span>
-    <button id="wifiBtn" class="quiet">Scan WiFi</button>
   </div>
   <div id="wifiBanner"></div>
   <p class="conn" id="conn"></p>

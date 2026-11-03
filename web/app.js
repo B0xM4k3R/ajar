@@ -430,8 +430,8 @@ function render(res) {
   $("#approveAll").hidden = !fresh.length;
   $("#scan").disabled = $("#audit").disabled = $("#fullAudit").disabled = state.scanning;
   $("#stopScan").style.display = state.scanning ? "" : "none";
-  $("#scan").textContent = state.scanning && state.phase === "Scanning devices" ? "Scanning…" : "Find devices";
-  $("#audit").textContent = state.scanning && state.phase !== "Scanning devices" ? "Scanning…" : "Quick scan";
+  $("#scan").textContent = state.scanning && state.phase === "Scanning devices" ? "Mapping…" : "Map Network";
+  $("#audit").textContent = state.scanning && state.phase !== "Scanning devices" ? "Scanning…" : "Standard Scan";
   const msgs = [state.error, state.audit_note, state.warning].filter(Boolean);
   const tls = state.tls || {};
   $("#banner").innerHTML = (tls.on === false ? `<div class="banner warn">Plain HTTP: anyone on your WiFi could read this dashboard and its password. ${esc(tls.why || "")}</div>` : "") +
@@ -563,7 +563,7 @@ function netRow(n) {
 function renderWifi(w, now) {
   const r = w.result;
   $("#wifiBtn").disabled = w.scanning;
-  $("#wifiBtn").textContent = w.scanning ? "Scanning…" : "Scan WiFi";
+  $("#wifiBtn").textContent = w.scanning ? "Scanning…" : "Analyze WiFi";
   $("#wifiSub").textContent = w.scanning ? "Scanning WiFi…" : r ? `${plural(r.nets.length, "network")} in range, scanned ${ago(r.scanned, now)}` : "Not scanned yet";
   $("#wifiBanner").innerHTML = [w.error, r && r.note].filter(Boolean).map(m => `<div class="banner">${esc(m)}</div>`).join("");
   if (!r) {
@@ -776,7 +776,7 @@ async function load(force) {
 }
 async function post(url) { await fetch(url, { method: "POST", headers: { "X-Ajar": "1" } }); load(true); }
 
-$("#scan").onclick = () => { viewNet = null; post("/api/scan"); };
+$("#scan").onclick = () => { viewNet = null; showTab("devices"); post("/api/scan"); };
 $("#netbar").addEventListener("change", e => {
   if (e.target.id !== "netpick") return;
   viewNet = e.target.value === (data && data.state.net) ? null : e.target.value;
@@ -839,12 +839,12 @@ $("#settings").addEventListener("click", async e => {
     msg.className = "msg " + (r.ok ? "ok" : "bad"); msg.textContent = r.message;
   } catch { msg.className = "msg bad"; msg.textContent = "Couldn't reach Ajar."; }
 });
-$("#audit").onclick = () => { viewNet = null; post("/api/audit"); };
+$("#audit").onclick = () => { viewNet = null; showTab("devices"); post("/api/audit"); };
 $("#stopScan").onclick = async () => {
   await fetch("/api/stop", { method: "POST", headers: { "X-Ajar": "1" } });
   setTimeout(() => load(true), 300);
 };
-$("#fullAudit").onclick = () => { viewNet = null; post("/api/audit?full=1"); };
+$("#fullAudit").onclick = () => { viewNet = null; showTab("devices"); post("/api/audit?full=1"); };
 $("#approveAll").onclick = () => post("/api/approve?mac=all&" + netQ());
 $("#list").onclick = e => {
   const b = e.target.closest("button");
@@ -875,7 +875,7 @@ document.querySelector(".tabs").onclick = e => {
   const b = e.target.closest("button[data-tab]");
   if (b) showTab(b.dataset.tab);
 };
-$("#wifiBtn").onclick = () => post("/api/wifi");
+$("#wifiBtn").onclick = () => { showTab("wifi"); post("/api/wifi"); };
 $("#nets").onclick = e => {
   const b = e.target.closest("button");
   if (!b) return;

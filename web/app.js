@@ -920,3 +920,51 @@ async function tick() {
   setTimeout(tick, busy ? 2000 : 5000);
 }
 tick();
+
+
+// Event listener for the Test Stability button
+document.addEventListener("click", async (e) => {
+  if (!e.target || e.target.id !== "pingBtn") return;
+  
+  const btn = e.target;
+  const res = document.querySelector("#pingResult");
+  if (!res) return;
+  
+  btn.disabled = true;
+  btn.textContent = "Testing…";
+  res.style.display = "none";
+  
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const resp = await fetch("/api/ping", { signal: controller.signal });
+    clearTimeout(timeoutId);
+    const r = await resp.json();
+    
+    res.style.display = "block";
+    res.style.borderLeftColor = "var(--ok)";
+    
+    if (r.error) {
+      res.style.borderLeftColor = "var(--high)";
+      res.innerHTML = `<b style="color:var(--high)">Error:</b> ${esc(r.error)}. Try restarting your router.`;
+    } else if (r.loss > 0) {
+      res.style.borderLeftColor = "var(--high)";
+      res.innerHTML = `<b style="color:var(--high)">Critical: Packet Loss (${r.loss}/20).</b> You are dropping connection. <b>Fix:</b> Move closer to the router, or switch to 5 GHz.`;
+    } else if (r.jitter > 30) {
+      res.style.borderLeftColor = "var(--med)";
+      res.innerHTML = `⚠️ <b>High Jitter (${r.jitter}ms).</b> Unstable connection. <b>Fix:</b> Change your router's channel.`;
+    } else if (r.jitter > 10) {
+      res.style.borderLeftColor = "var(--med)";
+      res.innerHTML = `🟡 <b>Fair (${r.avg}ms, ${r.jitter}ms jitter).</b> Good enough for YouTube, but might stutter on calls.`;
+    } else {
+      res.innerHTML = `✅ <b>Excellent (${r.avg}ms, ${r.jitter}ms jitter).</b> Rock solid.`;
+    }
+  } catch (err) {
+    res.style.display = "block";
+    res.style.borderLeftColor = "var(--high)";
+    res.innerHTML = `<b style="color:var(--high)">Failed to reach Ajar.</b> The request timed out.`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Test Stability";
+  }
+});

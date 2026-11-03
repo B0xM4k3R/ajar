@@ -93,8 +93,11 @@ def run_nmap(args, timeout=180):
     cmd = ["nmap"] + (["--privileged"] if nmap_privileged() else []) + args + ["--stats-every", "3s", "-oX", "-"]
     global ACTIVE_NMAP_PROC
     try:
+        kwargs = {}
+        if SYSTEM != "Windows":
+            kwargs["start_new_session"] = True
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
-                             encoding="utf-8", errors="replace")
+                             encoding="utf-8", errors="replace", **kwargs)
         ACTIVE_NMAP_PROC = p
     except FileNotFoundError:
         raise RuntimeError("nmap is not installed. " + NMAP_HINT.get(SYSTEM, "Install nmap from nmap.org."))
@@ -142,11 +145,15 @@ def fetch(url, timeout=3, limit=200000):
 
 
 def kill_active_nmap():
-    """Forcefully kill the running nmap process. Returns True if something was killed."""
+    """Forcefully kill the running nmap process tree."""
     global ACTIVE_NMAP_PROC
     if ACTIVE_NMAP_PROC is not None:
         try:
-            ACTIVE_NMAP_PROC.kill()
+            import os, signal
+            if SYSTEM == "Windows":
+                ACTIVE_NMAP_PROC.kill()
+            else:
+                os.killpg(os.getpgid(ACTIVE_NMAP_PROC.pid), signal.SIGKILL)
             ACTIVE_NMAP_PROC.wait(timeout=2)
         except Exception:
             pass

@@ -101,28 +101,6 @@ def scan():
     root = run_nmap(["-sn", "-T4", "--max-retries", "1", "--host-timeout", "10s", "-PE", "-PS21,22,23,25,53,80,110,135,139,143,443,445,3389,8080", subnet])
     found = parse_hosts(root, own_ip, own_mac)
     
-    # NEW: If nmap didn't find a hostname (often because firewalls block port 137/5353), 
-    # try the OS resolver (NetBIOS/DNS) and mDNS directly.
-    for i, (mac, ip, host, vendor, is_self) in enumerate(found):
-        if not host and ip:
-            try:
-                # OS resolver (handles NetBIOS on Windows, DNS elsewhere)
-                host = socket.gethostbyaddr(ip)[0].split(".")[0]
-            except Exception:
-                pass
-            
-            if not host:
-                try:
-                    # mDNS targeted query (asks the specific device for its name)
-                    mdns = mdns_scan(own_ip, targets=[ip], wait=1)
-                    if ip in mdns:
-                        info = mdns_info(mdns[ip])
-                        host = info.get("host") or info.get("name")
-                except Exception:
-                    pass
-            
-            if host:
-                found[i] = (mac, ip, host, vendor, is_self)
 
     # If nmap didn't find a hostname, try OS resolver and mDNS
     for i, (mac, ip, host, vendor, is_self) in enumerate(found):

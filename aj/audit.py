@@ -283,7 +283,7 @@ def audit(full=False):
             res[ip]["os_at"] = prev[ip]["os_at"]
         if not due: return
         state["phase"] = f"Guessing operating systems for {len(due)} device(s)" + (f", reusing {len(reuse)} from the last week" if reuse else "")
-        root = run_nmap(["-Pn", "-O", "--osscan-limit", "--max-os-tries", "1", "-T4", "--host-timeout", "30s", "-p", "1," + PORTS] + due, 900)
+        root = run_nmap(["-Pn", "-O", "--osscan-limit", "--max-os-tries", "1", "-T4", "--host-timeout", "30s", "-p", "1," + PORTS] + due, 300)
         for ip in due: res[ip]["os_at"] = now
         for h in root.findall("host"):
             ip, best = host_ip(h), h.find("os/osmatch")
@@ -299,14 +299,14 @@ def audit(full=False):
             res[ip].update(depth="deep", deep_at=prev[ip]["deep_at"])
         if not due: return
         state["phase"] = f"Deep-checking {len(due)} device(s)" + (f", reusing results for {len(reuse)} checked in the last week" if reuse else "")
-        root = run_nmap(["-Pn", "--max-retries", "1", "--max-rate", "1000", "--host-timeout", "60s", "-p", DEEP_PORTS] + due, 1200)
+        root = run_nmap(["-Pn", "--max-retries", "1", "--max-rate", "1000", "--host-timeout", "60s", "-p", DEEP_PORTS] + due, 600)
         for ip in merge_deep(root, res): res[ip]["deep_at"] = now
 
     def vuln_stage():
         hosts = [ip for ip, r in res.items() if r["ports"] and ip != state.get("own_ip")]
         if not hosts: return
         state["phase"] = f"Checking for known CVEs on {len(hosts)} device(s)"
-        root = run_nmap(["-Pn", "-sV", "--version-light", "-T4", "--max-retries", "1", "--host-timeout", "60s", "--script", "vulners", "-p", PORTS] + hosts, 1200)
+        root = run_nmap(["-Pn", "-sV", "--version-light", "-T4", "--max-retries", "1", "--host-timeout", "60s", "--script", "vulners", "-p", PORTS] + hosts, 600)
         for h in root.findall("host"):
             ip = host_ip(h)
             sc = find_script(h, "vulners")
@@ -375,7 +375,7 @@ def audit(full=False):
     except Exception: pass
 
     set_step(3, "Checking common ports")
-    root = run_nmap(["-Pn", "-T4", "--open", "--max-retries", "1", "--host-timeout", "15s", "-p", PORTS] + ips, 900)
+    root = run_nmap(["-Pn", "-T4", "--open", "--max-retries", "1", "--host-timeout", "15s", "-p", PORTS] + ips, 300)
     for h in root.findall("host"):
         ip = host_ip(h)
         if ip not in res: continue

@@ -245,7 +245,7 @@ class Handler(BaseHTTPRequestHandler):
                     else:
                         cmd = ["ping", "-c", "20", "-i", "0.2", "-W", "1", gw]
                     out = subprocess.run(cmd, capture_output=True, text=True, timeout=10).stdout
-                    times = [float(m) for m in re.findall(r"time=([\d.]+)", out)]
+                    times = [float(m) for m in re.findall(r"time[=<]\s*([\d.]+)\s*ms", out)]
                     if not times:
                         self.send(200, {"error": "No replies from router."})
                     else:

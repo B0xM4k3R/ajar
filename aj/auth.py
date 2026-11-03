@@ -12,6 +12,11 @@ auth = {"hash": None}  # None means no password (only with --no-password)
 
 
 good_auth = set()      # logins already verified, so the 5 second refresh stays cheap
+# Cap the set to prevent memory leaks from bot spamming
+def cap_good_auth():
+    global good_auth
+    if len(good_auth) > 1000:
+        good_auth = set(list(good_auth)[-500:])
 
 
 fails = {}             # ip -> times of recent wrong passwords

@@ -66,6 +66,8 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT, net TEXT NOT NULL, at REAL NOT NULL,
         kind TEXT NOT NULL, level TEXT NOT NULL, mac TEXT, text TEXT NOT NULL)""")
     c.execute("CREATE INDEX IF NOT EXISTS events_by_net ON events (net, id)")
+    c.execute("""CREATE TABLE IF NOT EXISTS default_cred_audit (
+        ts REAL, host TEXT, port INTEGER, username TEXT, status TEXT, mac TEXT)""")
     c.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
     c.commit()
     c.close()

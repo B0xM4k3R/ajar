@@ -428,7 +428,8 @@ function render(res) {
     (fresh.length ? `, <b>${fresh.length}</b> new` : "") +
     (nIssues ? `, <b>${nIssues}</b> to review` : "");
   $("#approveAll").hidden = !fresh.length;
-  $("#scan").disabled = $("#audit").disabled = $("#fullAudit").disabled = state.scanning;
+  const busy = state.scanning || (res.wifi && res.wifi.scanning);
+  $("#scan").disabled = $("#audit").disabled = $("#fullAudit").disabled = busy;
   $("#stopScan").style.display = state.scanning ? "" : "none";
   $("#scan").textContent = state.scanning && state.phase === "Scanning devices" ? "Mapping…" : "Map Network";
   $("#audit").textContent = state.scanning && state.phase !== "Scanning devices" ? "Scanning…" : "Standard Scan";
@@ -564,7 +565,9 @@ function renderWifi(w, now) {
   const r = w.result;
   const wBtn = $("#wifiBtn");
   if (wBtn) {
-    wBtn.disabled = w.scanning;
+    // Disable if WiFi is scanning OR if a network scan is running
+    const busy = w.scanning || (data && data.state && data.state.scanning);
+    wBtn.disabled = busy;
     wBtn.textContent = w.scanning ? "Scanning…" : "Analyze WiFi";
   }
   $("#wifiSub").textContent = w.scanning ? "Scanning WiFi…" : r ? `${plural(r.nets.length, "network")} in range, scanned ${ago(r.scanned, now)}` : "Not scanned yet";

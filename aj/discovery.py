@@ -98,10 +98,8 @@ def scan():
     # -PS sends TCP SYN to common ports, -PA sends TCP ACK. 
     # This finds devices (like Windows machines) that block ICMP pings but have open ports.
     # Probe standard Windows ports aggressively to bypass Public firewall profiles
-    print(f"[Ajar] Running aggressive discovery on {subnet}...")
     root = run_nmap(["-sn", "-T4", "-PE", "-PS21,22,23,25,53,80,110,135,139,143,443,445,3389,8080", subnet])
     found = parse_hosts(root, own_ip, own_mac)
-    print(f"[Ajar] Found {len(found)} devices.")
     
     # NEW: If nmap didn't find a hostname (often because firewalls block port 137/5353), 
     # try the OS resolver (NetBIOS/DNS) and mDNS directly.

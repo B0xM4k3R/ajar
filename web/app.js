@@ -562,8 +562,11 @@ function netRow(n) {
 
 function renderWifi(w, now) {
   const r = w.result;
-  $("#wifiBtn").disabled = w.scanning;
-  $("#wifiBtn").textContent = w.scanning ? "Scanning…" : "Analyze WiFi";
+  const wBtn = $("#wifiBtn");
+  if (wBtn) {
+    wBtn.disabled = w.scanning;
+    wBtn.textContent = w.scanning ? "Scanning…" : "Analyze WiFi";
+  }
   $("#wifiSub").textContent = w.scanning ? "Scanning WiFi…" : r ? `${plural(r.nets.length, "network")} in range, scanned ${ago(r.scanned, now)}` : "Not scanned yet";
   $("#wifiBanner").innerHTML = [w.error, r && r.note].filter(Boolean).map(m => `<div class="banner">${esc(m)}</div>`).join("");
   if (!r) {

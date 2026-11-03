@@ -104,6 +104,7 @@ function summaryLine(sec) {
 
 function renderInet(h) {
   const box = $("#inet");
+  if (!box) return;
   if (!h || h.status === "unknown") { box.hidden = true; return; }
   box.hidden = false;
   box.className = h.status === "down" ? "down" : "";
@@ -123,6 +124,7 @@ function renderInet(h) {
 
 function renderScorecard(sec) {
   const card = $("#scorecard");
+  if (!card) return 0;
   card.hidden = false;
   card.className = "g-" + sec.grade;
   if (sec.unscored) {
@@ -922,6 +924,9 @@ async function tick() {
 tick();
 
 
+
+
+
 // Event listener for the Test Stability button
 document.addEventListener("click", async (e) => {
   if (!e.target || e.target.id !== "pingBtn") return;
@@ -946,23 +951,23 @@ document.addEventListener("click", async (e) => {
     
     if (r.error) {
       res.style.borderLeftColor = "var(--high)";
-      res.innerHTML = `<b style="color:var(--high)">Error:</b> ${esc(r.error)}. Try restarting your router.`;
+      res.innerHTML = `<b style="color:var(--high)">Error:</b> ${esc(r.error)}`;
     } else if (r.loss > 0) {
       res.style.borderLeftColor = "var(--high)";
-      res.innerHTML = `<b style="color:var(--high)">Critical: Packet Loss (${r.loss}/20).</b> You are dropping connection. <b>Fix:</b> Move closer to the router, or switch to 5 GHz.`;
+      res.innerHTML = `<b style="color:var(--high)">Critical: Packet Loss (${r.loss}/20).</b> You are dropping connection. <b>Fix:</b> Move closer to the router.`;
     } else if (r.jitter > 30) {
       res.style.borderLeftColor = "var(--med)";
       res.innerHTML = `⚠️ <b>High Jitter (${r.jitter}ms).</b> Unstable connection. <b>Fix:</b> Change your router's channel.`;
     } else if (r.jitter > 10) {
       res.style.borderLeftColor = "var(--med)";
-      res.innerHTML = `🟡 <b>Fair (${r.avg}ms, ${r.jitter}ms jitter).</b> Good enough for YouTube, but might stutter on calls.`;
+      res.innerHTML = `🟡 <b>Fair (${r.avg}ms, ${r.jitter}ms jitter).</b> Good enough for YouTube, but might stutter.`;
     } else {
       res.innerHTML = `✅ <b>Excellent (${r.avg}ms, ${r.jitter}ms jitter).</b> Rock solid.`;
     }
   } catch (err) {
     res.style.display = "block";
     res.style.borderLeftColor = "var(--high)";
-    res.innerHTML = `<b style="color:var(--high)">Failed to reach Ajar.</b> The request timed out.`;
+    res.innerHTML = `<b style="color:var(--high)">Failed to reach Ajar.</b>`;
   } finally {
     btn.disabled = false;
     btn.textContent = "Test Stability";

@@ -31,10 +31,10 @@
     <button id="stopScan" class="quiet" style="display:none; border-color:var(--high); color:var(--high)">Stop</button>
   </div>
 </header>
-<section id="progress" aria-live="polite" hidden></section>
+
+<div id="progress" aria-live="polite" hidden></div>
 <div id="banner"></div>
-<section id="inet" hidden></section>
-<section id="scorecard" hidden></section>
+
 <nav class="tabs" role="tablist">
   <button role="tab" data-tab="devices" aria-selected="true">Devices</button>
   <button role="tab" data-tab="wifi" aria-selected="false">WiFi <span id="wifiBadge"></span></button>
@@ -42,6 +42,7 @@
   <button role="tab" data-tab="changes" aria-selected="false">Changes <span id="changesBadge"></span></button>
   <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
 </nav>
+
 <section id="devices">
   <div class="summary">
     <span id="count"></span>
@@ -50,19 +51,31 @@
   <svg id="map" viewBox="0 0 360 382" role="img" aria-label="Map of devices on your network"></svg>
   <ul id="list"></ul>
 </section>
+
 <section id="wifi" hidden>
   <div class="sechead">
     <span class="sub" id="wifiSub">Loading…</span>
   </div>
   <div id="wifiBanner"></div>
-  
+  <div style="margin: 10px 0 0; padding: 12px 14px; background: var(--panel); border-radius: 8px; border: 1px solid var(--line);">
+    <p class="conn" id="conn" style="margin: 0 0 10px 0;"></p>
+    <button class="quiet" id="pingBtn">Test Stability</button>
+    <div id="pingResult" class="hint" style="display:none; margin-top: 10px; padding: 8px 10px; background: var(--paper); border-left: 4px solid var(--line);"></div>
+  </div>
   <div id="wifiHint"></div>
   <div id="bands"></div>
   <h3 class="nets">Networks nearby</h3>
   <ul id="nets"></ul>
 </section>
-<section id="security" hidden></section>
+
+<section id="security" hidden>
+  <section id="inet" hidden></section>
+  <section id="scorecard" hidden></section>
+  <div id="securityContent"></div>
+</section>
+
 <section id="settings" hidden></section>
+
 <section id="changes" hidden>
   <div class="sechead">
     <span class="sub" id="changesSub">What changed on this network, newest first.</span>

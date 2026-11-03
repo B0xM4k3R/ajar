@@ -227,7 +227,16 @@ class Handler(BaseHTTPRequestHandler):
             import subprocess, statistics, re, platform
             gw = state.get("gateway")
             if not gw:
-                self.send(200, {"error": "No gateway known yet. Run a network scan first."})
+                # If we haven't run a network scan yet, ask the OS for the default gateway right now
+                try:
+                    from .netinfo import net_info
+                    gw, subnet, own_ip, mac = net_info()
+                    state.update(gateway=gw, subnet=subnet, own_ip=own_ip) # Cache it for later
+                except Exception:
+                    pass
+            
+            if not gw:
+                self.send(200, {"error": "Could not determine your router's IP. Are you connected?"})
             else:
                 try:
                     # Cross-platform ping arguments

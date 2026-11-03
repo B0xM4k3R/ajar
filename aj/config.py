@@ -32,6 +32,7 @@ AUDIT_STEPS = [
     "Read device names (mDNS/UPnP)",
     "Probe what's behind open ports",
     "Guess operating systems",
+    "Check for known CVEs",
     "Check file sharing (SMB, FTP, NFS)",
     "Check logins and camera streams",
     "Check factory-default credentials",

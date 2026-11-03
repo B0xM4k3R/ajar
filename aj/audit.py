@@ -12,15 +12,15 @@ from . import probe as probelib
 from . import defaults as credlib
 from . import mitm as mitmlib
 from . import cve as cvelib
+from . import netcheck
 from .identify import mdns_info, mdns_scan, samsung_info, size_from_model, ssdp_scan, upnp_info
 
 PORT_NAMES = {
-    21: "FTP", 22: "SSH", 23: "Telnet", 80: "Web (HTTP)", 111: "RPC",
-    139: "SMB (NetBIOS)", 443: "Web (HTTPS)", 445: "SMB file sharing",
-    548: "AFP file sharing", 554: "Video stream (RTSP)", 631: "Printing (IPP)",
+    21: "FTP", 22: "SSH", 23: "Telnet", 25: "SMTP", 53: "DNS", 80: "Web (HTTP)", 
+    110: "POP3", 111: "RPC", 135: "RPC", 139: "SMB (NetBIOS)", 143: "IMAP", 443: "Web (HTTPS)", 
+    445: "SMB file sharing", 548: "AFP file sharing", 554: "Video stream (RTSP)", 631: "Printing (IPP)",
     2049: "NFS file sharing", 3389: "Remote Desktop", 5900: "VNC remote screen",
-    8001: "Samsung TV control", 8002: "Samsung TV control (alt)", 
-    8080: "Web (alt)", 8200: "Media server", 9100: "Printing (raw)",
+    8001: "Samsung TV control", 8080: "Web (alt)", 8200: "Media server", 9100: "Printing (raw)",
 }
 PORTS = ",".join(str(p) for p in PORT_NAMES)
 DEEP_PORTS = "1-10000"
@@ -37,6 +37,12 @@ IOT_PORT_NAMES = {
 
 EXPECTED_PORTS = {53, 80, 443, 8080, 8443, 1900, 5000, 7000, 7100, 8008, 8009, 8001, 8002, 49152,
                   554, 631, 9100, 6668, 6053, 8883, 515, 3689, 5353}
+
+def _net_name(net):
+    c = db()
+    r = c.execute("SELECT name, subnet FROM networks WHERE id=?", (net,)).fetchone()
+    c.close()
+    return (r["name"] or r["subnet"] or net) if r else net
 
 def norm_access(*vals):
     t = " ".join(v.upper() for v in vals if v)
@@ -208,34 +214,25 @@ def audit(full=False):
         except ValueError: prev[r["ip"]] = {}
     ips = [r["ip"] for r in rows]
     res = {ip: {"ports": [], "shares": [], "ftp_anon": False, "nfs": []} for ip in ips}
-
-    set_step(3, "Checking common ports")
-    root = run_nmap(["-Pn", "-T4", "--open", "--max-retries", "1", "--host-timeout", "90s", "-p", PORTS] + ips, 900)
-    for h in root.findall("host"):
-        ip = host_ip(h)
-        if ip not in res: continue
-        for p in h.findall("ports/port"):
-            st = p.find("state")
-            if st is None or st.get("state") != "open": continue
-            n = int(p.get("portid"))
-            svc = p.find("service")
-            res[ip]["ports"].append({"port": n, "name": PORT_NAMES.get(n, svc.get("name") if svc is not None else str(n))})
-
-    def with_open(*nums): return [ip for ip, r in res.items() if any(p["port"] in nums for p in r["ports"])]
+    
     notes = []
     def stage(label, fn):
-        if state.get("stop_requested"):
-            raise RuntimeError("Scan stopped by user.")
-        try:
-            fn()
+        if state.get("stop_requested"): raise RuntimeError("Scan stopped by user.")
+        try: fn()
         except RuntimeError as e:
-            if state.get("stop_requested"):
-                raise RuntimeError("Scan stopped by user.")
+            if state.get("stop_requested"): raise RuntimeError("Scan stopped by user.")
             notes.append(f"{label}: {e}")
         except subprocess.TimeoutExpired:
-            if state.get("stop_requested"):
-                raise RuntimeError("Scan stopped by user.")
+            if state.get("stop_requested"): raise RuntimeError("Scan stopped by user.")
             notes.append(f"{label}: timed out")
+
+    def with_open(*nums): return [ip for ip, r in res.items() if any(p["port"] in nums for p in r["ports"])]
+
+    def mitm_stage():
+        findings = mitmlib.check_arp()
+        for f in findings:
+            for ip in f.get("ips", []):
+                if ip in res: res[ip].setdefault("extra_findings", []).append(f)
 
     def smb_stage():
         hosts = with_open(139, 445)
@@ -286,16 +283,11 @@ def audit(full=False):
             res[ip]["os_at"] = prev[ip]["os_at"]
         if not due: return
         state["phase"] = f"Guessing operating systems for {len(due)} device(s)" + (f", reusing {len(reuse)} from the last week" if reuse else "")
-        root = run_nmap(["-Pn", "-O", "--osscan-limit", "--max-os-tries", "1", "-T4", "-p", "1," + PORTS] + due, 900)
+        root = run_nmap(["-Pn", "-O", "--osscan-limit", "--max-os-tries", "1", "-T4", "--host-timeout", "30s", "-p", "1," + PORTS] + due, 900)
         for ip in due: res[ip]["os_at"] = now
         for h in root.findall("host"):
             ip, best = host_ip(h), h.find("os/osmatch")
             if ip in res and best is not None and int(best.get("accuracy", "0")) >= 85: res[ip]["os"] = {"name": best.get("name"), "accuracy": int(best.get("accuracy"))}
-
-    set_step(8, "Checking file sharing")
-    stage("Share check", smb_stage)
-    stage("FTP check", ftp_stage)
-    stage("NFS check", nfs_stage)
 
     def deep_stage():
         hosts = [r["ip"] for r in rows if r.get("kind") in DEEP_KINDS or not r.get("vendor") or 8001 in {p["port"] for p in res[r["ip"]]["ports"]}]
@@ -307,28 +299,20 @@ def audit(full=False):
             res[ip].update(depth="deep", deep_at=prev[ip]["deep_at"])
         if not due: return
         state["phase"] = f"Deep-checking {len(due)} device(s)" + (f", reusing results for {len(reuse)} checked in the last week" if reuse else "")
-        root = run_nmap(["-Pn", "--max-retries", "1", "--max-rate", "1000", "--host-timeout", "5m", "-p", DEEP_PORTS] + due, 1200)
+        root = run_nmap(["-Pn", "--max-retries", "1", "--max-rate", "1000", "--host-timeout", "60s", "-p", DEEP_PORTS] + due, 1200)
         for ip in merge_deep(root, res): res[ip]["deep_at"] = now
-
-    set_step(4, "Guessing operating systems")
-    stage("OS guess", os_stage)
-    set_step(3, "Deep-checking smart-home devices")
-    stage("Deep check", deep_stage)
 
     def vuln_stage():
         hosts = [ip for ip, r in res.items() if r["ports"] and ip != state.get("own_ip")]
         if not hosts: return
         state["phase"] = f"Checking for known CVEs on {len(hosts)} device(s)"
-        root = run_nmap(["-Pn", "-sV", "--script", "vulners", "-p", PORTS] + hosts, 1200)
+        root = run_nmap(["-Pn", "-sV", "--version-light", "-T4", "--max-retries", "1", "--host-timeout", "60s", "--script", "vulners", "-p", PORTS] + hosts, 1200)
         for h in root.findall("host"):
             ip = host_ip(h)
             sc = find_script(h, "vulners")
             if ip in res and sc is not None:
                 cves = cvelib.parse_vulners(sc)
                 if cves: res[ip]["cves"] = cves
-
-    set_step(5, "Checking for known CVEs")
-    stage("Vulnerability check", vuln_stage)
 
     def probe_stage():
         for ip, r in res.items():
@@ -342,9 +326,6 @@ def audit(full=False):
                 r["probes"] = probes
                 r["fingerprint"] = probelib.fingerprint(probes)
 
-    set_step(6, "Probing what's behind open ports")
-    stage("Probe", probe_stage)
-
     def login_stage():
         for ip, r in res.items():
             if ip == state.get("own_ip"): continue
@@ -356,9 +337,6 @@ def audit(full=False):
             if ports & {554, 8554}:
                 rt = weakauth.probe_rtsp(ip, 554 if 554 in ports else 8554)
                 if rt: r["rtsp"] = rt
-
-    set_step(7, "Checking logins and camera streams")
-    stage("Login check", login_stage)
 
     def cred_stage():
         if not net_setting(net, "allow_default_cred_checks", False): return
@@ -372,50 +350,69 @@ def audit(full=False):
             for ip, r in res.items():
                 row = next((x for x in rows if x["ip"] == ip), None)
                 if not row or row["mac"] not in consented: continue
-                
-                # Fallback: use MAC vendor or UPnP maker if the HTTP fingerprint is useless
-                # (e.g. routers that return a generic "302 Found" or "Login" page)
-                fp = r.get("fingerprint") or ""
-                useless = {"302 Found", "301 Moved Permanently", "401 Unauthorized", 
-                           "403 Forbidden", "404 Not Found", "Redirecting...", "Login", "Router"}
-                if not fp or fp in useless:
-                    fp = row.get("vendor") or ""
-                    if not fp and r.get("info"):
-                        fp = r["info"].get("maker") or r["info"].get("model") or ""
-
+                fp = r.get("fingerprint") or row.get("vendor") or ""
+                if not fp and r.get("info"): fp = r["info"].get("maker") or r["info"].get("model") or ""
                 if not credlib.lookup(fp):
                     r["default_cred_result"] = {"skipped": f"No documented defaults matched fingerprint '{fp}'"}
                     continue
-                    
                 ports = {p["port"] for p in r["ports"]}
                 https_port = next((p for p in (443, 8443, 9443) if p in ports), None)
                 http_port = next((p for p in (80, 8000, 8080, 8888) if p in ports), None)
-                
                 if https_port: result = credlib.check_http_defaults(ip, https_port, True, fp, True, log_fn=lambda h, p, u, s, _m=row["mac"]: log_fn(h, p, u, s, _m))
                 elif http_port: result = credlib.check_http_defaults(ip, http_port, False, fp, True, log_fn=lambda h, p, u, s, _m=row["mac"]: log_fn(h, p, u, s, _m))
-                else: result = {"skipped": "No web admin port open"}
-                
-                # ALWAYS save the result so the UI stops saying 'Waiting...'
-                r["default_cred_result"] = result
+                else: result = {"skipped": "no web admin port"}
+                if result.get("tried"): r["default_cred_result"] = result
                 c2.commit()
         finally: c2.close()
 
-    set_step(8, "Checking factory-default credentials")
-    stage("Credential check", cred_stage)
-
-    def mitm_stage():
-        findings = mitmlib.check_arp()
-        for f in findings:
-            for ip in f.get("ips", []):
-                if ip in res: res[ip].setdefault("extra_findings", []).append(f)
-
-    set_step(9, "Checking for ARP spoofing")
+    # --- EXECUTION ---
+    
+    set_step(1, "Checking for ARP spoofing")
     stage("MITM check", mitm_stage)
 
-    set_step(10, "Reading device names")
+    set_step(2, "Checking DHCP and DNS for tampering")
+    try: netcheck.run(net, _net_name(net), state.get("gateway"))
+    except Exception: pass
+
+    set_step(3, "Checking common ports")
+    root = run_nmap(["-Pn", "-T4", "--open", "--max-retries", "1", "--host-timeout", "15s", "-p", PORTS] + ips, 900)
+    for h in root.findall("host"):
+        ip = host_ip(h)
+        if ip not in res: continue
+        for p in h.findall("ports/port"):
+            st = p.find("state")
+            if st is None or st.get("state") != "open": continue
+            n = int(p.get("portid"))
+            svc = p.find("service")
+            res[ip]["ports"].append({"port": n, "name": PORT_NAMES.get(n, svc.get("name") if svc is not None else str(n))})
+
+    set_step(4, "Deep-checking smart-home devices")
+    stage("Deep check", deep_stage)
+
+    set_step(5, "Reading device names")
     ssdp = ssdp_scan(state.get("own_ip"))
     ports_of = {ip: {p["port"] for p in r["ports"]} for ip, r in res.items()}
     mdns = mdns_scan(state.get("own_ip"), ips)
+
+    set_step(6, "Probing what's behind open ports")
+    stage("Probe", probe_stage)
+
+    set_step(7, "Guessing operating systems")
+    stage("OS guess", os_stage)
+
+    set_step(8, "Checking for known CVEs")
+    stage("Vulnerability check", vuln_stage)
+
+    set_step(9, "Checking file sharing")
+    stage("Share check", smb_stage)
+    stage("FTP check", ftp_stage)
+    stage("NFS check", nfs_stage)
+
+    set_step(10, "Checking logins and camera streams")
+    stage("Login check", login_stage)
+
+    set_step(11, "Checking factory-default credentials")
+    stage("Credential check", cred_stage)
 
     stamp = time.time()
     c = db()

@@ -93,7 +93,9 @@ def second_chance(found, own_ip, own_mac, net=None):
 def scan():
     gw, subnet, own_ip, own_mac = net_info()
     state.update(gateway=gw, subnet=subnet, own_ip=own_ip)
-    root = run_nmap(["-sn", "-T4", subnet])
+    # -PS sends TCP SYN to common ports, -PA sends TCP ACK. 
+    # This finds devices (like Windows machines) that block ICMP pings but have open ports.
+    root = run_nmap(["-sn", "-T4", "-PS22,80,443,445,3389,8080", "-PA80,443", subnet])
     found = parse_hosts(root, own_ip, own_mac)
     net, baseline = resolve(found, gw, subnet, own_mac)
     found = second_chance(found, own_ip, own_mac, net)

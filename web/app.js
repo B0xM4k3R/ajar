@@ -705,33 +705,71 @@ function dur(sec) {
 let finishedShown = null;
 function renderProgress(st, w) {
   const box = $("#progress");
+  
+  // 1. WiFi Scan Progress
+  if (w && w.scanning) {
+    box.hidden = false;
+    box.className = "";
+    box.innerHTML = `<div class="proghead"><b>Analyzing WiFi...</b></div>
+      <div class="bar busy"><span></span></div>
+      <p>Looking for nearby networks.</p>`;
+    document.title = "(WiFi…) Ajar";
+    finishedShown = null;
+    return;
+  }
+
+  // 2. Network Scan Progress
   if (st.scanning && st.steps) {
     const n = st.steps.length;
-    const i = Math.min(st.step || 0, n - 1); // Clamp step so it never exceeds total
+    const i = Math.min(st.step || 0, n - 1);
     const p = st.progress;
     const frac = p && p.percent != null ? Math.min(1, p.percent / 100) : 0;
     const overall = Math.round(((i + frac) / n) * 100);
-    const what = st.full ? "Deep scan" : st.deep ? "Quick scan" : "Finding devices";
-    const detail = [st.phase, p ? `${p.task}${p.percent != null ? " " + Math.round(p.percent) + "%" : ""}` : "", p && p.remaining ? `about ${dur(p.remaining)} left in this step` : ""].filter(Boolean).join(", ");
+    const what = st.full ? "Deep Scan" : st.deep ? "Standard Scan" : "Map Network";
+    
+    // Only show remaining time if it's more than 3 seconds (nmap always says 1 sec left but takes 10)
+    let detail = [st.phase, p ? `${p.task}${p.percent != null ? " " + Math.round(p.percent) + "%" : ""}` : ""].filter(Boolean).join(", ");
+    if (p && p.remaining && p.remaining > 3) detail += `, about ${dur(p.remaining)} left in this step`;
+
     box.hidden = false;
     box.className = "";
-    box.innerHTML = `<div class="proghead"><b>${what}: step ${i + 1} of ${n}</b><span class="sub">${dur(st.now - st.started)} so far</span></div>
-      <div class="bar${p && p.percent != null ? "" : " busy"}"><span style="width:${p && p.percent != null ? overall : 30}%"></span></div>
-      <p>${esc(detail)}.</p>
-      ${n > 1 ? `<ol class="steps">${st.steps.map((s, k) => `<li class="${k < i ? "done" : k === i ? "now" : ""}"><span class="mk">${k < i ? "✓" : k === i ? "●" : "○"}</span><span>${esc(s)}</span></li>`).join("")}</ol>` : ""}
-      ${st.deep ? `<p class="sub">This takes a few minutes. You can close the page; the check keeps running.</p>` : ""}`;
+    box.innerHTML = `
+      <div style="display:flex; align-items:center; gap:10px; font-size:0.875rem; padding: 2px 0;">
+        <b style="white-space:nowrap;">${what}</b>
+        <span class="sub" style="white-space:nowrap;">Step ${i + 1}/${n}</span>
+        <div class="bar${p && p.percent != null ? "" : " busy"}" style="flex:1; margin:0; height:6px;"><span style="width:${p && p.percent != null ? overall : 30}%"></span></div>
+        <span class="sub" style="white-space:nowrap;">${dur(st.now - st.started)}</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; margin-top:4px; font-size:0.75rem; color:var(--muted);">
+        <span>${esc(detail)}</span>
+      </div>`;
     document.title = `(${p && p.percent != null ? overall + "%" : "…"}) Ajar`;
     finishedShown = null;
     return;
   }
-  document.title = w && w.scanning ? "(WiFi…) Ajar" : "Ajar";
+
+  // 3. Scan Finished (Persistent Result)
+  document.title = "Ajar";
   const f = st.finished;
-  if (f && st.now - f.at < 20 && finishedShown !== f.at && !st.error) {
+  if (f && !st.error) {
+    if (finishedShown === f.at) return; // Already showing this result
+    finishedShown = f.at;
     box.hidden = false;
     box.className = "done";
-    box.innerHTML = `<div class="proghead"><b>${f.deep ? "Services check" : "Device scan"} finished</b><span class="sub">took ${dur(f.took)}</span></div>`;
+    const onlineCount = data && data.devices ? data.devices.filter(d => d.online).length : 0;
+    const what = f.deep ? "Security Scan" : "Map Network";
+    
+    let actions = `<button class="quiet" style="margin-top:8px" onclick="document.querySelector('#list').scrollIntoView({behavior: 'smooth'})">View Devices</button>`;
+    if (f.deep) {
+      actions += ` <button style="margin-top:8px" onclick="showTab('security'); window.scrollTo(0,0);">Review Security Findings</button>`;
+    }
+
+    box.innerHTML = `<div class="proghead"><b>${what} finished</b><span class="sub">took ${dur(f.took)}</span></div>
+      <p>Found <b>${onlineCount}</b> devices online. Expand them in the list below for details.</p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">${actions}</div>`;
     return;
   }
+
   box.hidden = true;
 }
 

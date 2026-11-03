@@ -337,3 +337,25 @@ body { max-width: 620px; padding: 16px 16px 48px; }
 #list .detail ul.files li.risk { color: var(--high); }
 #list .detail .credbox { margin-top: 12px; padding: 10px; background: var(--paper); border-radius: 6px; border: 1px solid var(--line); }
 
+
+/* Make the progress container ultra-compact during scans */
+#progress {
+  padding: 8px 12px !important;
+}
+#progress .bar {
+  border-radius: 3px;
+}
+
+/* ============================================================
+   COMPACT BUTTONS
+   ============================================================ */
+.hero .btns {
+  gap: 6px !important;
+}
+.hero button {
+  padding: 6px 12px !important;
+  font-size: 0.8125rem !important; /* 13px */
+}
+#stopScan {
+  margin-left: 4px;
+}

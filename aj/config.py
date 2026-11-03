@@ -24,10 +24,19 @@ scan_lock = threading.Lock()
 
 SCAN_STEPS = ["Find devices"]
 
-AUDIT_STEPS = ["Check common ports", "Check file sharing (SMB, FTP, NFS)", "Guess operating systems",
-               "Deep-check smart-home and unknown devices", "Check logins and camera streams",
-               "Read the names devices announce", "Check what the router opens to the internet",
-               "Check DHCP and DNS for tampering"]
+AUDIT_STEPS = [
+    "Check for ARP spoofing",
+    "Check DHCP and DNS for tampering",
+    "Check common ports",
+    "Deep-check smart-home and unknown devices",
+    "Read device names (mDNS/UPnP)",
+    "Probe what's behind open ports",
+    "Guess operating systems",
+    "Check file sharing (SMB, FTP, NFS)",
+    "Check logins and camera streams",
+    "Check factory-default credentials",
+    "Check what the router opens to the internet"
+]
 
 
 def set_step(i, phase=None):

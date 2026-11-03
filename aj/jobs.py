@@ -99,13 +99,13 @@ def scan_cycle(deep=False, full=False):
             state["phase"] = "Checking services and shares"
             ssdp = audit(full=full)
             if state.get("net") and ssdp is not None:
-                set_step(7, "Asking the router what it opens to the internet")
+                set_step(11, "Check what the router opens to the internet")
                 try:
                     exposure.run(state["net"], ssdp, state.get("gateway"))
                 except Exception as e:  # never lose the rest of the check over this step
                     state["audit_note"] = "; ".join(filter(None, [state.get("audit_note"),
                                                                    f"Internet exposure check: {e}"]))
-                set_step(8, "Checking DHCP and DNS for tampering")
+                set_step(2, "Check DHCP and DNS for tampering")
                 try:
                     netcheck.run(state["net"], net_name(state["net"]), state.get("gateway"))
                 except Exception:

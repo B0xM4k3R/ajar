@@ -209,7 +209,7 @@ def audit(full=False):
     ips = [r["ip"] for r in rows]
     res = {ip: {"ports": [], "shares": [], "ftp_anon": False, "nfs": []} for ip in ips}
 
-    set_step(1, "Checking common ports")
+    set_step(3, "Checking common ports")
     root = run_nmap(["-Pn", "-T4", "--open", "--max-retries", "1", "--host-timeout", "90s", "-p", PORTS] + ips, 900)
     for h in root.findall("host"):
         ip = host_ip(h)
@@ -292,7 +292,7 @@ def audit(full=False):
             ip, best = host_ip(h), h.find("os/osmatch")
             if ip in res and best is not None and int(best.get("accuracy", "0")) >= 85: res[ip]["os"] = {"name": best.get("name"), "accuracy": int(best.get("accuracy"))}
 
-    set_step(2, "Checking file sharing")
+    set_step(8, "Checking file sharing")
     stage("Share check", smb_stage)
     stage("FTP check", ftp_stage)
     stage("NFS check", nfs_stage)
@@ -310,9 +310,9 @@ def audit(full=False):
         root = run_nmap(["-Pn", "--max-retries", "1", "--max-rate", "1000", "--host-timeout", "5m", "-p", DEEP_PORTS] + due, 1200)
         for ip in merge_deep(root, res): res[ip]["deep_at"] = now
 
-    set_step(3, "Guessing operating systems")
+    set_step(4, "Guessing operating systems")
     stage("OS guess", os_stage)
-    set_step(4, "Deep-checking smart-home devices")
+    set_step(3, "Deep-checking smart-home devices")
     stage("Deep check", deep_stage)
 
     def vuln_stage():

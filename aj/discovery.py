@@ -1,5 +1,6 @@
 """Finds devices on the network with nmap and keeps the device list up to date."""
 import time
+import socket
 
 from .config import state
 from .db import db
@@ -7,6 +8,7 @@ from .tools import run_nmap
 from .netinfo import net_info
 from .networks import current_net, resolve
 from .events import device_label, prune, record
+from .identify import mdns_scan, mdns_info
 
 
 KINDS = [
@@ -97,6 +99,30 @@ def scan():
     # This finds devices (like Windows machines) that block ICMP pings but have open ports.
     root = run_nmap(["-sn", "-T4", "-PS22,80,443,445,3389,8080", "-PA80,443", subnet])
     found = parse_hosts(root, own_ip, own_mac)
+    
+    # NEW: If nmap didn't find a hostname (often because firewalls block port 137/5353), 
+    # try the OS resolver (NetBIOS/DNS) and mDNS directly.
+    for i, (mac, ip, host, vendor, is_self) in enumerate(found):
+        if not host and ip:
+            try:
+                # OS resolver (handles NetBIOS on Windows, DNS elsewhere)
+                host = socket.gethostbyaddr(ip)[0].split(".")[0]
+            except Exception:
+                pass
+            
+            if not host:
+                try:
+                    # mDNS targeted query (asks the specific device for its name)
+                    mdns = mdns_scan(own_ip, targets=[ip], wait=1)
+                    if ip in mdns:
+                        info = mdns_info(mdns[ip])
+                        host = info.get("host") or info.get("name")
+                except Exception:
+                    pass
+            
+            if host:
+                found[i] = (mac, ip, host, vendor, is_self)
+
     net, baseline = resolve(found, gw, subnet, own_mac)
     found = second_chance(found, own_ip, own_mac, net)
     save(found, gw, net, baseline)

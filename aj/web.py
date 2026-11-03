@@ -223,6 +223,29 @@ class Handler(BaseHTTPRequestHandler):
             fname = "ajar-audit-" + re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-") + "-" + time.strftime("%Y%m%d") + ".html"
             self.send(200, report.build_report(data).encode("utf-8"), "text/html; charset=utf-8",
                       extra={"Content-Disposition": f'attachment; filename="{fname}"'})
+        elif path == "/api/ping":
+            import subprocess, statistics, re
+            gw = state.get("gateway")
+            if not gw:
+                self.send(200, {"error": "No gateway known yet."})
+            else:
+                try:
+                    # Ping 20 times, fast interval
+                    out = subprocess.run(["ping", "-c", "20", "-i", "0.2", gw], capture_output=True, text=True, timeout=10).stdout
+                    times = [float(m) for m in re.findall(r"time=([\d.]+)", out)]
+                    if not times:
+                        self.send(200, {"error": "No replies from router."})
+                    else:
+                        avg = statistics.mean(times)
+                        jitter = statistics.stdev(times) if len(times) > 1 else 0
+                        self.send(200, {
+                            "avg": round(avg, 1),
+                            "jitter": round(jitter, 1),
+                            "loss": 20 - len(times),
+                            "max": round(max(times), 1)
+                        })
+                except Exception as e:
+                    self.send(200, {"error": str(e)})
         elif path in STATIC:
             name, ctype = STATIC[path]
             with open(os.path.join(config.HERE, "web", name), "rb") as f:

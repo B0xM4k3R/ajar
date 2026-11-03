@@ -518,7 +518,15 @@ function bandCard(b, r) {
   if (b.current) {
     const cur = b.band === "5" && b.current.lo !== b.current.hi ? `channel ${b.current.primary} (uses ${b.current.label})` : `channel ${b.current.label}`;
     html += `<p>Yours: ${cur}, ${busy(b.current)}. `;
-    html += b.suggest ? `<b>Set your router's ${b.band} GHz channel to ${b.best.lo}${b.band === "5" ? ` (width ${b.width} MHz)` : ""} for less interference.</b>` : b.current.label === b.best.label ? "Already the quietest choice." : b.current.dfs && !b.best.dfs ? `About as quiet as ${what(b.best)}, but yours is a DFS channel, so your router pauses for about a minute whenever it detects radar. Channel ${b.best.lo} avoids that.` : "Close to the quietest, no need to change.";
+    if (b.suggest) {
+      html += `<b style="color:var(--high)">Action required: Set your router's ${b.band} GHz channel to ${b.best.lo}${b.band === "5" ? ` (width ${b.width} MHz)` : ""} to avoid interference.</b>`;
+    } else if (b.current.label === b.best.label) {
+      html += `✅ <b style="color:var(--ok)">Already the quietest choice.</b>`;
+    } else if (b.current.dfs && !b.best.dfs) {
+      html += `About as quiet as ${what(b.best)}, but yours is a DFS channel, so your router pauses for about a minute whenever it detects radar. Channel ${b.best.lo} avoids that.`;
+    } else {
+      html += "Close to the quietest, no need to change.";
+    }
     html += "</p>";
   }
   if (b.width_assumed) html += `<p class="sub">This system doesn't report channel width, so ajar assumes ${b.width} MHz, the usual router default. Check the width in your router's WiFi settings.</p>`;
@@ -548,7 +556,7 @@ function netRow(n) {
   const chips = (n.mine ? `<span class="tag">Yours</span>` : "") + (n.connected ? `<span class="tag">Connected</span>` : "") +
     (n.kind_label ? `<span class="tag ${n.kind === "backhaul" ? "" : "kind"}">${esc(n.kind_label)}</span>` : "") +
     n.labels.map(l => `<span class="sec ${gradeOf(n, l)}">${esc(l)}</span>`).join("") +
-    (n.gen ? `<span class="tag kind">${esc(n.gen)}</span>` : "");
+    (n.gen ? `<span class="tag" style="background:var(--ink); color:var(--paper); border-color:var(--ink)">${esc(n.gen)}</span>` : "");
   const about = [n.device ? `Device: <b>${esc(n.device)}</b>` : "", n.related && n.kind !== "backhaul" ? `Same router as ${esc(n.related)}` : ""].filter(Boolean).join(". ");
   return `
     <li class="${n.ssid ? "" : "hidden"}">

@@ -713,7 +713,7 @@ function renderNetbar(res) {
   const here = nets.find(x => x.id === res.state.net);
   const notice = n.current ? "" : `<div class="viewing">Saved results from <b>${esc(n.name)}</b>, last seen ${when(n.last_seen)}. ${here ? `ajar is on <b>${esc(here.name)}</b> now.` : ""} Scans always check the network ajar is on. <button class="quiet" id="netBack">Back to ${here ? esc(here.name) : "the current network"}</button></div>`;
   $("#banner").insertAdjacentHTML("afterbegin", notice);
-  ["#scan", "#audit", "#fullAudit"].forEach(s => { if (viewNet && !n.current) $(s).disabled = true; });
+  // Removed: Scans are always allowed. Clicking Scan while viewing an old network jumps to the live one.
 }
 
 let events = [], eventsFor = null, eventsLatest = -1, presenceShown = false;
@@ -763,7 +763,7 @@ async function load(force) {
 }
 async function post(url) { await fetch(url, { method: "POST", headers: { "X-Ajar": "1" } }); load(true); }
 
-$("#scan").onclick = () => post("/api/scan");
+$("#scan").onclick = () => { viewNet = null; post("/api/scan"); };
 $("#netbar").addEventListener("change", e => {
   if (e.target.id !== "netpick") return;
   viewNet = e.target.value === (data && data.state.net) ? null : e.target.value;
@@ -826,12 +826,12 @@ $("#settings").addEventListener("click", async e => {
     msg.className = "msg " + (r.ok ? "ok" : "bad"); msg.textContent = r.message;
   } catch { msg.className = "msg bad"; msg.textContent = "Couldn't reach Ajar."; }
 });
-$("#audit").onclick = () => post("/api/audit");
+$("#audit").onclick = () => { viewNet = null; post("/api/audit"); };
 $("#stopScan").onclick = async () => {
   await fetch("/api/stop", { method: "POST", headers: { "X-Ajar": "1" } });
   setTimeout(() => load(true), 300);
 };
-$("#fullAudit").onclick = () => post("/api/audit?full=1");
+$("#fullAudit").onclick = () => { viewNet = null; post("/api/audit?full=1"); };
 $("#approveAll").onclick = () => post("/api/approve?mac=all&" + netQ());
 $("#list").onclick = e => {
   const b = e.target.closest("button");

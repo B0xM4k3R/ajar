@@ -4,9 +4,22 @@ const enc = encodeURIComponent;
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const short = s => String(s || "").split(".")[0];
+const isMacLike = s => !!s && (/^([0-9a-f]{2}[:-]?){5}[0-9a-f]{2}$/i.test(s) || /^[0-9a-f]{12}$/i.test(s));
 const cut = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
-const nameOf = d => d.name || short(d.hostname) || (d.audit && d.audit.info && (d.audit.info.name || short(d.audit.info.host))) || d.vendor ||
-  (d.mac.startsWith("ip:") ? d.ip : d.mac);
+const nameOf = d => {
+  const candidates = [
+    d.name,
+    short(d.hostname),
+    d.audit && d.audit.info && d.audit.info.name,
+    d.audit && d.audit.info && short(d.audit.info.host),
+    d.audit && d.audit.info && d.audit.info.model,
+    d.vendor
+  ];
+  for (const c of candidates) {
+    if (c && !isMacLike(c)) return c;
+  }
+  return d.mac.startsWith("ip:") ? d.ip : d.mac;
+};
 const tail = d => "." + String(d.ip).split(".").pop();
 const status = d => {
   if (!d.online) return "off";

@@ -359,3 +359,9 @@ body { max-width: 620px; padding: 16px 16px 48px; }
 #stopScan {
   margin-left: 4px;
 }
+
+/* Settings Reorganization */
+.settings-advanced { 
+  border: 2px solid var(--new) !important; 
+  background: color-mix(in srgb, var(--new) 5%, var(--panel)) !important; 
+}

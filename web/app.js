@@ -205,7 +205,7 @@ async function downloadReport(btn) {
 function renderSecurity(sec) {
   if (sec.unscored) {
     $("#security").className = "";
-    $("#security").innerHTML = reportBtn() + `<div class="block"><div class="scorehead">${ring("–", 84)}<div><h2>Not checked yet</h2>
+    $("#securityContent").innerHTML = reportBtn() + `<div class="block"><div class="scorehead">${ring("–", 84)}<div><h2>Not checked yet</h2>
       <p>The score needs ${esc(sec.missing.join("; "))}.</p></div></div></div>`;
     return;
   }
@@ -216,7 +216,7 @@ function renderSecurity(sec) {
   const lost = [sec.lost.wifi ? `${sec.lost.wifi} on WiFi` : "", sec.lost.devices ? `${sec.lost.devices} on devices` : "",
     sec.lost.internet ? `${sec.lost.internet} on what's open to the internet` : ""].filter(Boolean);
   $("#security").className = "g-" + sec.grade;
-  $("#security").innerHTML = reportBtn() + `
+  $("#securityContent").innerHTML = reportBtn() + `
     <div class="block"><div class="scorehead">${ring(sec.score, 84)}<div>
       <h2>Grade ${sec.grade}</h2>
       <p>${esc(summaryLine(sec))}.${lost.length ? ` Points lost: ${lost.join(", ")}.` : ""}</p>

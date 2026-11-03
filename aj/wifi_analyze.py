@@ -3,7 +3,7 @@ import re
 from collections import Counter
 
 from .config import state, wifi
-from .db import net_setting, set_net_setting
+from .db import net_setting, set_net_setting, get_setting
 from .networks import current_net
 from .wifi_scan import oui_vendor
 
@@ -323,10 +323,10 @@ def analyze(raw, mine_set, not_mine):
 
 def wifi_snapshot(net=None):
     """The WiFi picture for a network: live for the one you're on, saved for others."""
-    here = state.get("net") or current_net()
+    here = state.get("net") or get_setting("current_net")
     net = net or here
     # The live scan only counts once this session knows which network it's on.
-    live = wifi["raw"] if net and net == state.get("net") else None
+    live = wifi["raw"] if net and net == here else None
     raw = live or (net_setting(net, "wifi_last") if net else None)
     result = None
     if raw:

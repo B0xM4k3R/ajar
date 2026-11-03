@@ -224,14 +224,18 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200, report.build_report(data).encode("utf-8"), "text/html; charset=utf-8",
                       extra={"Content-Disposition": f'attachment; filename="{fname}"'})
         elif path == "/api/ping":
-            import subprocess, statistics, re
+            import subprocess, statistics, re, platform
             gw = state.get("gateway")
             if not gw:
-                self.send(200, {"error": "No gateway known yet."})
+                self.send(200, {"error": "No gateway known yet. Run a network scan first."})
             else:
                 try:
-                    # Ping 20 times, fast interval
-                    out = subprocess.run(["ping", "-c", "20", "-i", "0.2", gw], capture_output=True, text=True, timeout=10).stdout
+                    # Cross-platform ping arguments
+                    if platform.system() == "Windows":
+                        cmd = ["ping", "-n", "20", "-w", "200", gw]
+                    else:
+                        cmd = ["ping", "-c", "20", "-i", "0.2", "-W", "1", gw]
+                    out = subprocess.run(cmd, capture_output=True, text=True, timeout=10).stdout
                     times = [float(m) for m in re.findall(r"time=([\d.]+)", out)]
                     if not times:
                         self.send(200, {"error": "No replies from router."})

@@ -571,6 +571,9 @@ function netRow(n) {
 
 function renderWifi(w, now) {
   const r = w.result;
+  const pBtn = $("#pingBtn");
+  if (pBtn) pBtn.disabled = false;
+
   const wBtn = $("#wifiBtn");
   if (wBtn) {
     // Disable if WiFi is scanning OR if a network scan is running
@@ -578,7 +581,7 @@ function renderWifi(w, now) {
     wBtn.disabled = busy;
     wBtn.textContent = w.scanning ? "Scanning…" : "Analyze WiFi";
   }
-  $("#wifiSub").textContent = w.scanning ? "Scanning WiFi…" : r ? `${plural(r.nets.length, "network")} in range, scanned ${ago(r.scanned, now)}` : "Not scanned yet";
+  $("#wifiSub").textContent = w.scanning ? "Scanning WiFi…" : r && r.scanned ? `${plural(r.nets.length, "network")} in range, scanned ${ago(r.scanned, now)}` : "Not scanned yet. Click Analyze WiFi.";
   $("#wifiBanner").innerHTML = [w.error, r && r.note].filter(Boolean).map(m => `<div class="banner">${esc(m)}</div>`).join("");
   if (!r) {
     $("#conn").textContent = $("#wifiHint").innerHTML = $("#bands").innerHTML = "";

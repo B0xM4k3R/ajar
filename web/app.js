@@ -479,7 +479,13 @@ function chart(b, nets) {
   const aps = [];
   nets.forEach(n => n.aps.forEach(a => { if (a.band === b.band) aps.push({ a, n }); }));
   aps.sort((p, q) => (p.n.mine - q.n.mine) || (p.a.dbm - q.a.dbm));
-  const top = aps.filter(p => p.n.mine).reduce((m, p) => (!m || p.a.dbm > m.a.dbm ? p : m), null);
+  // Find the strongest access point for EACH network, not just ours
+  const strongest = {};
+  aps.forEach(p => {
+    if (!strongest[p.n.key] || p.a.dbm > strongest[p.n.key].a.dbm) {
+      strongest[p.n.key] = p;
+    }
+  });
   const base = 104, hOf = dbm => Math.min(92, Math.max(5, ((dbm + 100) / 65) * 92));
   let out = "", labels = "";
   if (b.band === "2.4") {
@@ -488,7 +494,7 @@ function chart(b, nets) {
       const [lo, hi] = spanOf(a), h = hOf(a.dbm), l = x(lo - 2), r = x(hi + 2);
       const d = lo === hi ? `M${l},${base} Q${x(lo)},${base - 2 * h} ${r},${base} Z` : `M${l},${base} L${x(lo)},${base - h} L${x(hi)},${base - h} L${r},${base} Z`;
       out += `<path class="net${n.mine ? " mine" : ""}" d="${d}"><title>${esc(n.ssid || "Hidden")}, ch ${a.ch}, ${a.dbm} dBm</title></path>`;
-      if (top && a === top.a) labels += `<text class="lab" x="${x((lo + hi) / 2)}" y="${base - h - 5}">${esc(cut(n.ssid, 14))}</text>`;
+      if (strongest[n.key] && a === strongest[n.key].a) labels += `<text class="lab" x="${x((lo + hi) / 2)}" y="${base - h - 5}">${esc(cut(n.ssid, 14))}</text>`;
     });
     let axis = "";
     for (let c = 1; c <= 13; c++) axis += `<text class="${[1, 6, 11].includes(c) ? "key" : ""}" x="${x(c)}" y="${base + 14}">${c}</text>`;
@@ -503,7 +509,7 @@ function chart(b, nets) {
     if (i0 < 0 || i1 < 0) return;
     const h = hOf(a.dbm);
     out += `<rect class="net${n.mine ? " mine" : ""}" x="${x(i0) + 1}" y="${base - h}" width="${(i1 - i0 + 1) * sw - 2}" height="${h}" rx="3"><title>${esc(n.ssid || "Hidden")}, ch ${a.ch}${a.width ? ", " + a.width + " MHz" : ""}, ${a.dbm} dBm</title></rect>`;
-    if (top && a === top.a) labels += `<text class="lab" x="${x(i0) + ((i1 - i0 + 1) * sw) / 2}" y="${base - h - 5}">${esc(cut(n.ssid, 14))}</text>`;
+    if (strongest[n.key] && a === strongest[n.key].a) labels += `<text class="lab" x="${x(i0) + ((i1 - i0 + 1) * sw) / 2}" y="${base - h - 5}">${esc(cut(n.ssid, 14))}</text>`;
   });
   const axis = [36, 52, 100, 116, 132, 149, 165].map(c => `<text class="key" x="${x(idx(c)) + sw / 2}" y="${base + 14}">${c}</text>`).join("");
   const p0 = idx(b.best.lo), p1 = idx(b.best.hi);

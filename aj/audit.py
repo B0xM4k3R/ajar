@@ -19,7 +19,8 @@ PORT_NAMES = {
     139: "SMB (NetBIOS)", 443: "Web (HTTPS)", 445: "SMB file sharing",
     548: "AFP file sharing", 554: "Video stream (RTSP)", 631: "Printing (IPP)",
     2049: "NFS file sharing", 3389: "Remote Desktop", 5900: "VNC remote screen",
-    8001: "Samsung TV control", 8080: "Web (alt)", 8200: "Media server", 9100: "Printing (raw)",
+    8001: "Samsung TV control", 8002: "Samsung TV control (alt)", 
+    8080: "Web (alt)", 8200: "Media server", 9100: "Printing (raw)",
 }
 PORTS = ",".join(str(p) for p in PORT_NAMES)
 DEEP_PORTS = "1-10000"

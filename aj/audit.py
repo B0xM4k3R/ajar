@@ -254,7 +254,10 @@ def audit(full=False):
     def with_open(*nums): return [ip for ip, r in res.items() if any(p["port"] in nums for p in r["ports"])]
 
     def mitm_stage():
-        findings = mitmlib.check_arp()
+        c3 = db()
+        r3 = c3.execute("SELECT gateway_mac FROM networks WHERE id=?", (net,)).fetchone()
+        c3.close()
+        findings = mitmlib.check_arp(state.get("subnet"), state.get("gateway"), r3["gateway_mac"] if r3 else None)
         for f in findings:
             for ip in f.get("ips", []):
                 if ip in res: res[ip].setdefault("extra_findings", []).append(f)

@@ -23,6 +23,7 @@ from .events import latest_id, recent
 from .jobs import start_scan, start_wifi
 from . import alerts
 from . import netcheck
+from . import ping
 from . import report
 from . import auth as authlib
 from .auth import auth
@@ -293,34 +294,11 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     from .netinfo import net_info
                     gw, subnet, own_ip, mac = net_info()
-                    state.update(gateway=gw, subnet=subnet, own_ip=own_ip) # Cache it for later
+                    state.update(gateway=gw, subnet=subnet, own_ip=own_ip)  # Cache it for later
                 except Exception:
                     pass
-            
-            if not gw:
-                self.send(200, {"error": "Could not determine your router's IP. Are you connected?"})
-            else:
-                try:
-                    # Cross-platform ping arguments
-                    if platform.system() == "Windows":
-                        cmd = ["ping", "-n", "20", "-w", "200", gw]
-                    else:
-                        cmd = ["ping", "-c", "20", "-i", "0.2", "-W", "1", gw]
-                    out = subprocess.run(cmd, capture_output=True, text=True, timeout=10).stdout
-                    times = [float(m) for m in re.findall(r"time[=<]\s*([\d.]+)\s*ms", out)]
-                    if not times:
-                        self.send(200, {"error": "No replies from router."})
-                    else:
-                        avg = statistics.mean(times)
-                        jitter = statistics.stdev(times) if len(times) > 1 else 0
-                        self.send(200, {
-                            "avg": round(avg, 1),
-                            "jitter": round(jitter, 1),
-                            "loss": 20 - len(times),
-                            "max": round(max(times), 1)
-                        })
-                except Exception as e:
-                    self.send(200, {"error": str(e)})
+            self.send(200, ping.ping_gateway(gw) if gw else
+                      {"error": "Could not determine your router's IP. Are you connected?"})
         elif path in STATIC:
             name, ctype = STATIC[path]
             with open(os.path.join(config.HERE, "web", name), "rb") as f:

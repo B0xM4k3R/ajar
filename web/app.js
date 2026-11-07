@@ -1049,7 +1049,7 @@ document.addEventListener("click", async (e) => {
       res.innerHTML = `<b style="color:var(--high)">Error:</b> ${esc(r.error)}`;
     } else if (r.loss > 0) {
       res.style.borderLeftColor = "var(--high)";
-      res.innerHTML = `<b style="color:var(--high)">Critical: Packet Loss (${r.loss}/20).</b> You are dropping connection. <b>Fix:</b> Move closer to the router.`;
+      res.innerHTML = `<b style="color:var(--high)">Critical: Packet Loss (${r.loss}/${r.sent || 20}).</b> You are dropping connection. <b>Fix:</b> Move closer to the router.`;
     } else if (r.jitter > 30) {
       res.style.borderLeftColor = "var(--med)";
       res.innerHTML = `⚠️ <b>High Jitter (${r.jitter}ms).</b> Unstable connection. <b>Fix:</b> Change your router's channel.`;

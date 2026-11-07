@@ -3,7 +3,8 @@ import time
 import socket
 
 from .config import state
-from .db import db
+from .db import db, net_setting
+from . import subnets
 from .tools import run_nmap
 from .netinfo import net_info
 from .networks import current_net, resolve
@@ -62,7 +63,19 @@ def parse_hosts(root, own_ip, own_mac):
     return found
 
 
-def second_chance(found, own_ip, own_mac, net=None):
+def add_extra_subnets(found, extra, own_ip, own_mac, nmap=None):
+    """Adds the devices that answer on other (routed) networks the person listed. They're tracked
+    by IP address, because a MAC address can't be seen across a router."""
+    if not extra:
+        return found
+    state["phase"] = "Scanning %d extra network(s)" % len(extra)
+    root = (nmap or run_nmap)(["-sn", "-n", "-T4", "--max-retries", "1", "--host-timeout", "10s", "-PE",
+                               "-PS21,22,23,25,53,80,110,135,139,143,443,445,3389,8080"] + list(extra), 600)
+    have = {f[0] for f in found} | {f[1] for f in found}
+    return found + [f for f in parse_hosts(root, own_ip, own_mac) if f[0] not in have and f[1] not in have]
+
+
+def second_chance(found, own_ip, own_mac, net=None, subnet=None):
     """Phones doze and can miss the quick sweep. Before calling a known device
     offline, ask for it directly a few more times (ARP, patient)."""
     seen = {f[0] for f in found}
@@ -72,6 +85,13 @@ def second_chance(found, own_ip, own_mac, net=None):
         "SELECT mac, ip FROM devices WHERE last_seen>? AND net=?", (since, net or current_net() or ""))
         if r["mac"] not in seen and r["ip"]]
     c.close()
+    if subnet:  # ARP only works on our own network: devices on routed extra networks can't be re-asked this way
+        import ipaddress
+        try:
+            own_net = ipaddress.ip_network(subnet, strict=False)
+            missing = [ip for ip in missing if ipaddress.ip_address(ip) in own_net]
+        except ValueError:
+            pass
     if not missing:
         return found
     state["phase"] = "Re-checking %d quiet device(s)" % len(missing)
@@ -100,7 +120,13 @@ def scan():
     # Probe standard Windows ports aggressively to bypass Public firewall profiles
     root = run_nmap(["-sn", "-T4", "--max-retries", "1", "--host-timeout", "10s", "-PE", "-PS21,22,23,25,53,80,110,135,139,143,443,445,3389,8080", subnet])
     found = parse_hosts(root, own_ip, own_mac)
-    
+    extra, _ = subnets.clean(net_setting(current_net() or "", "extra_subnets", []), subnet, limit=3)
+    try:
+        found = add_extra_subnets(found, extra, own_ip, own_mac)
+    except RuntimeError:
+        if state.get("stop_requested"):
+            raise
+        state["audit_note"] = "Could not scan the extra networks."  # the main network's scan still counts
 
     # If nmap didn't find a hostname, try OS resolver and mDNS
     for i, (mac, ip, host, vendor, is_self) in enumerate(found):
@@ -123,7 +149,7 @@ def scan():
                 found[i] = (mac, ip, host, vendor, is_self)
 
     net, baseline = resolve(found, gw, subnet, own_mac)
-    found = second_chance(found, own_ip, own_mac, net)
+    found = second_chance(found, own_ip, own_mac, net, subnet)
     save(found, gw, net, baseline)
     prune(net)
 

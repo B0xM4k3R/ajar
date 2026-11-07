@@ -28,6 +28,7 @@ from . import netcheck
 from . import ping
 from . import prefs
 from . import schedule
+from . import subnets
 from . import report
 from . import auth as authlib
 from .auth import auth
@@ -101,7 +102,8 @@ def snapshot(net=None, expand=None):
     sec = security_report(rows, w["result"], net=net if view["current"] else None,
                           exposure=net_setting(net, "exposure") if net else None,
                           netcheck=net_setting(net, "netcheck") if net else None,
-                          accepted=accept.get(net), cve_lookup=prefs.get_prefs()["cve_lookup"])
+                          accepted=accept.get(net), cve_lookup=prefs.get_prefs()["cve_lookup"],
+                          segmentation=net_setting(net, "segmentation") if net else None)
     acc_by_mac = {}
     for i in accept.get(net):
         acc_by_mac.setdefault(i["mac"], []).append(i["id"])
@@ -116,6 +118,8 @@ def snapshot(net=None, expand=None):
             "wifi": w, "security": sec,
             "network": view, "networks": nets, "events_latest": latest_id(net) if net else 0,
             "alerts": alerts.public_config(), "schedule": schedule.get_schedule(), "prefs": prefs.get_prefs(),
+            "net_settings": {"segmentation_targets": net_setting(net, "segmentation_targets", []) if net else [],
+                             "extra_subnets": net_setting(net, "extra_subnets", []) if net else []},
             "health": netcheck.health_summary(net_setting(net, "health", [])) if net else None}
 
 
@@ -283,6 +287,7 @@ class Handler(BaseHTTPRequestHandler):
             snap["role"] = self.role
             if self.role == "viewer":
                 snap.pop("alerts", None)  # alert settings hold passwords, tokens and URLs
+                snap.pop("net_settings", None)
             else:
                 snap["viewer_enabled"] = bool(auth["viewer"])
             self.send(200, snap)
@@ -371,9 +376,15 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200, {"started": start_wifi()})
         elif u.path == "/api/settings":
             body = self.read_json()
+            problems = {}
             if body and net:
                 if "allow_default_cred_checks" in body:
                     set_net_setting(net, "allow_default_cred_checks", bool(body["allow_default_cred_checks"]))
+                for key, limit in (("segmentation_targets", 4), ("extra_subnets", 3)):
+                    if key in body:
+                        kept, rejected = subnets.clean(body[key], state.get("subnet"), limit=limit)
+                        set_net_setting(net, key, kept)
+                        problems[key] = [f"{t}: {why}" for t, why in rejected]
                 a = body.get("accept")
                 if isinstance(a, dict):
                     from .score import FIXES
@@ -389,7 +400,7 @@ class Handler(BaseHTTPRequestHandler):
                     else:
                         current.append(mac)
                     set_net_setting(net, "cred_consent", current)
-            self.send(200, {"ok": True})
+            self.send(200, {"ok": True, "problems": problems})
         elif u.path == "/api/mynet":
             ssid = q.get("ssid", [""])[0][:64]
             if ssid and net:

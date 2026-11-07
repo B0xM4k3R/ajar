@@ -3,7 +3,7 @@ import threading
 import time
 
 from .config import set_step, AUDIT_EVERY, AUDIT_STEPS, SCAN_EVERY, SCAN_STEPS, scan_lock, state, wifi, wifi_lock
-from .db import set_net_setting
+from .db import net_setting, set_net_setting
 from .events import record
 from .wifi_analyze import wifi_changes, wifi_snapshot
 from .discovery import scan
@@ -12,6 +12,7 @@ from . import exposure
 from . import alerts
 from . import netcheck
 from . import schedule
+from . import segmentation
 from .wifi_scan import wifi_scan
 
 
@@ -106,6 +107,13 @@ def scan_cycle(deep=False, full=False):
                 except Exception as e:  # never lose the rest of the check over this step
                     state["audit_note"] = "; ".join(filter(None, [state.get("audit_note"),
                                                                    f"Internet exposure check: {e}"]))
+            if state.get("net") and ssdp is not None and net_setting(state["net"], segmentation.TARGETS_KEY, []):
+                state["steps"] = list(state.get("steps") or []) + ["Check isolation from other networks"]
+                set_step(len(state["steps"]) - 1, "Check isolation from other networks")
+                try:
+                    segmentation.run(state["net"], state.get("subnet"))
+                except Exception as e:  # best-effort, like the exposure check
+                    state["audit_note"] = "; ".join(filter(None, [state.get("audit_note"), f"Isolation check: {e}"]))
             state["last_audit"] = time.time()
         net = state.get("net")
         if net:

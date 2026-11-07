@@ -687,6 +687,16 @@ function renderSettings(force) {
       <div class="actions"><button type="submit">Save</button><span class="msg"></span></div>
     </form>
 
+    <form class="block" data-api="netsettings">
+      <b>Other networks</b>${netBox ? "" : `<p class="sub">These settings are for the network you're on now.</p>`}
+      <p class="intro">Optional. Use one network per line, like 192.168.1.0/24. Only private ranges of up to 256 addresses.</p>
+      <label><span>Check that this network is kept apart from these (run Ajar on your guest or smart-home network and list your main one)</span>
+        <textarea data-k="segmentation_targets" rows="2" placeholder="192.168.1.0/24">${esc((ns.segmentation_targets || []).join("\n"))}</textarea></label>
+      <label><span>Also scan these networks (they must be reachable from here; devices are tracked by IP address)</span>
+        <textarea data-k="extra_subnets" rows="2" placeholder="192.168.20.0/24">${esc((ns.extra_subnets || []).join("\n"))}</textarea></label>
+      <div class="actions"><button type="submit">Save</button><span class="msg"></span></div>
+    </form>
+
     <form class="block" data-api="viewer">
       <b>View-only access</b>
       <p class="intro">${data.viewer_enabled ? "A view-only password is set." : "Not set."} Share it with someone who should be able to look at the dashboard and reports, but not start scans or change anything. They also can't see your alert settings.</p>

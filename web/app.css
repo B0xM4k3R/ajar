@@ -365,6 +365,7 @@ body { max-width: 620px; padding: 16px 16px 48px; }
   border: 2px solid var(--new) !important; 
   background: color-mix(in srgb, var(--new) 5%, var(--panel)) !important; 
 }
+
 /* small inline buttons, accepted risks, links styled as buttons */
 .mini { padding: 2px 9px; font-size: .78rem; margin: 4px 0 0 8px; }
 .accepted { opacity: .75; }
@@ -377,3 +378,11 @@ body.viewer #scan, body.viewer #audit, body.viewer #fullAudit, body.viewer #wifi
 body.viewer #approveAll, body.viewer [data-tab="settings"], body.viewer [data-act="approve"], body.viewer [data-act="rename"],
 body.viewer [data-act="auth_cred"], body.viewer [data-accept], body.viewer [data-unaccept], body.viewer #netRename { display: none !important; }
 
+/* the Accept / Undo buttons live in the wide column, under the text, not squeezed in the points column */
+.fixes > li > .mini { grid-column: 2; justify-self: start; margin: 6px 0 0 0; }
+#map .hit { fill: transparent; cursor: pointer; }
+#map .node, #map .hub { cursor: pointer; }
+#map .hit:focus, #map .hit:hover + .node { stroke: var(--ink); stroke-width: 2; }
+#list li.flash { animation: flash 1.6s ease-out; }
+@keyframes flash { from { background: color-mix(in srgb, var(--new) 28%, transparent); } to { background: transparent; } }
+.reportcard { margin: 12px 0; }

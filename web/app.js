@@ -70,6 +70,7 @@ function drawMap(devices, gateway, scanning) {
     if (issuesOf(d).length) out += `<circle class="issue" cx="${x}" cy="${y.toFixed(1)}" r="${st === "new" || st === "bad" ? 15 : 11}"/>`;
     if (st === "new" || st === "bad") out += `<circle class="halo" cx="${x}" cy="${y.toFixed(1)}" r="11"/>`;
     out += `<circle class="node ${st}" cx="${x}" cy="${y.toFixed(1)}" r="7"><title>${esc(nameOf(d))} (${esc(d.ip)})</title></circle>`;
+    out += `<circle class="hit" data-mac="${esc(d.mac)}" cx="${x}" cy="${y.toFixed(1)}" r="19" tabindex="0" role="button" aria-label="Show details for ${esc(nameOf(d))}"/>`;
     out += `<text x="${x}" y="${(y + 22).toFixed(1)}">${esc(cut(nameOf(d), 11))}</text>`;
     out += `<text class="tail" x="${x}" y="${(y + 31).toFixed(1)}">${esc(tail(d))}</text>`;
   });
@@ -80,6 +81,7 @@ function drawMap(devices, gateway, scanning) {
   if (router && issuesOf(router).length) out += `<circle class="issue" cx="${cx}" cy="${cy}" r="19"/>`;
   if (router && !router.approved) out += `<circle class="halo" cx="${cx}" cy="${cy}" r="16"/>`;
   out += `<rect class="hub" x="${cx - 12}" y="${cy - 12}" width="24" height="24" rx="5"/>`;
+  if (router) out += `<rect class="hit" data-mac="${esc(router.mac)}" x="${cx - 22}" y="${cy - 22}" width="44" height="44" tabindex="0" role="button" aria-label="Show details for ${esc(nameOf(router))}"/>`;
   out += `<text x="${cx}" y="${cy + 30}">router</text>`;
   $("#map").innerHTML = out;
 }
@@ -199,9 +201,25 @@ function exposureBlock(ex) {
   return html + manual + "</div>";
 }
 
-function reportBtn() {
-  return `<div class="actions" style="margin:0 0 4px"><button class="quiet" data-report="1">Download audit report</button>
-    <span class="sub">A single HTML file you can save, print or share.</span></div>`;
+function renderReport() {
+  const q = netQ();
+  const where = (data && data.network && data.network.name) ? ` for ${esc(data.network.name)}` : "";
+  $("#report").innerHTML = `
+    <div class="block reportcard">
+      <h3>Audit report${where}</h3>
+      <p class="sub">One page with your score, what to fix and how, every check, WiFi, internet health and each device. Save it, print it, or send it to someone helping you. It opens in any browser and works offline.</p>
+      <div class="actions"><button data-report="1">Download audit report</button><span class="msg"></span></div>
+    </div>
+    <div class="block reportcard">
+      <h3>Export your data</h3>
+      <p class="sub">The same information in a form other programs can read.</p>
+      <ul class="plain">
+        <li><b>Devices (CSV)</b>: one row per device, with addresses, open ports, problems and CVEs. Opens in Excel or Google Sheets.</li>
+        <li><b>Everything (JSON)</b>: devices with all their details, your score, fixes, accepted risks and recent changes. For scripts, Home Assistant or Grafana.</li>
+      </ul>
+      <div class="actions"><a class="btn quiet" href="/api/export?format=csv${q ? "&" + q : ""}" download>Download devices (CSV)</a>
+        <a class="btn quiet" href="/api/export${q ? "?" + q : ""}" download>Download everything (JSON)</a></div>
+    </div>`;
 }
 
 async function downloadReport(btn) {
@@ -231,7 +249,7 @@ async function downloadReport(btn) {
 function renderSecurity(sec) {
   if (sec.unscored) {
     $("#security").className = "";
-    $("#securityContent").innerHTML = reportBtn() + `<div class="block"><div class="scorehead">${ring("–", 84)}<div><h2>Not checked yet</h2>
+    $("#securityContent").innerHTML = `<div class="block"><div class="scorehead">${ring("–", 84)}<div><h2>Not checked yet</h2>
       <p>The score needs ${esc(sec.missing.join("; "))}.</p></div></div></div>`;
     return;
   }
@@ -242,7 +260,7 @@ function renderSecurity(sec) {
   const lost = [sec.lost.wifi ? `${sec.lost.wifi} on WiFi` : "", sec.lost.devices ? `${sec.lost.devices} on devices` : "",
     sec.lost.internet ? `${sec.lost.internet} on what's open to the internet` : ""].filter(Boolean);
   $("#security").className = "g-" + sec.grade;
-  $("#securityContent").innerHTML = reportBtn() + `
+  $("#securityContent").innerHTML = `
     <div class="block"><div class="scorehead">${ring(sec.score, 84)}<div>
       <h2>Grade ${sec.grade}</h2>
       <p>${esc(summaryLine(sec))}.${lost.length ? ` Points lost: ${lost.join(", ")}.` : ""}</p>
@@ -445,6 +463,23 @@ function row(d, now) {
     </li>`;
 }
 
+// Clicking a device on the map opens its details in the list below and scrolls to it.
+function openDevice(mac) {
+  if (!mac) return;
+  expanded.add(mac);
+  showTab("devices");
+  render(data);
+  load(true);  // fetch its full detail right away
+  const li = [...document.querySelectorAll("#list li")].find(x => x.querySelector(`[data-mac="${CSS.escape(mac)}"]`));
+  if (li) { li.scrollIntoView({ behavior: "smooth", block: "start" }); li.classList.add("flash"); setTimeout(() => li.classList.remove("flash"), 1700); }
+}
+$("#map").addEventListener("click", e => { const t = e.target.closest("[data-mac]"); if (t) openDevice(t.dataset.mac); });
+$("#map").addEventListener("keydown", e => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const t = e.target.closest("[data-mac]");
+  if (t) { e.preventDefault(); openDevice(t.dataset.mac); }
+});
+
 function render(res) {
   data = res;
   const viewer = res.role === "viewer";
@@ -626,10 +661,10 @@ function renderWifi(w, now) {
     wBtn.textContent = w.scanning ? "Scanning…" : "Analyze WiFi";
   }
   $("#wifiSub").textContent = w.scanning ? "Scanning WiFi…" : r && r.scanned ? `${plural(r.nets.length, "network")} in range, scanned ${ago(r.scanned, now)}` : "Not scanned yet. Click Analyze WiFi.";
-  $("#wifiBanner").innerHTML = [w.error, r && r.note].filter(Boolean).map(m => `<div class="banner">${esc(m)}</div>`).join("");
+  $("#wifiBanner").innerHTML = [w.error, r && r.note, w.unsaved && r ? "This scan isn't saved yet. Press Map Network once, so Ajar knows which network you're on and can keep it." : ""].filter(Boolean).map(m => `<div class="banner">${esc(m)}</div>`).join("");
   if (!r) {
     $("#conn").textContent = $("#wifiHint").innerHTML = $("#bands").innerHTML = "";
-    $("#nets").innerHTML = `<li class="empty">No WiFi scan yet. Tap Scan WiFi.</li>`;
+    $("#nets").innerHTML = `<li class="empty">No WiFi scan yet. Click Analyze WiFi.</li>`;
     return;
   }
   const c = r.conn;
@@ -786,8 +821,10 @@ function showTab(t) {
   $("#devices").hidden = t !== "devices";
   $("#wifi").hidden = t !== "wifi";
   $("#security").hidden = t !== "security";
+  $("#report").hidden = t !== "report";
   $("#changes").hidden = t !== "changes";
   $("#settings").hidden = t !== "settings";
+  if (t === "report") renderReport();
   if (t === "changes") { loadEvents(true); }
   if (t === "settings") renderSettings(false);
   document.body.classList.toggle("on-security", t === "security");
@@ -957,6 +994,9 @@ $("#banner").addEventListener("click", e => {
   if (e.target.id === "netBack") { viewNet = null; load(true); }
 });
 $("#presence").onchange = e => { presenceShown = e.target.checked; loadEvents(true); };
+$("#report").addEventListener("click", e => {
+  if (e.target.dataset.report) downloadReport(e.target);
+});
 $("#security").addEventListener("click", e => {
   if (e.target.dataset.accept) acceptRisk(e.target.dataset.accept);
   if (e.target.dataset.unaccept) undoRisk(e.target.dataset.unaccept);

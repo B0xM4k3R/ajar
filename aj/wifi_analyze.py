@@ -325,17 +325,19 @@ def wifi_snapshot(net=None):
     """The WiFi picture for a network: live for the one you're on, saved for others."""
     here = state.get("net") or get_setting("current_net")
     net = net or here
-    # The live scan only counts once this session knows which network it's on.
-    live = wifi["raw"] if net and net == here else None
+    # A scan from this session is shown for the network we're on. That includes the case where we
+    # don't know yet which network that is (no device scan has run): the scan is real, it just
+    # can't be saved under a network until the first device scan says where we are.
+    live = wifi["raw"] if net == here else None
     raw = live or (net_setting(net, "wifi_last") if net else None)
     result = None
     if raw:
         try:
-            result = analyze(raw, net_setting(net, "my_ssids", []), net_setting(net, "not_my_ssids", []))
+            result = analyze(raw, net_setting(net, "my_ssids", []) if net else [], net_setting(net, "not_my_ssids", []) if net else [])
         except Exception as e:  # never let a bad scan break the whole dashboard
             wifi["error"] = "Could not analyze the last WiFi scan: " + str(e)
     return {"scanning": wifi["scanning"] and net == here, "error": wifi["error"] if net == here else None,
-            "result": result}
+            "result": result, "unsaved": bool(live and not here)}
 
 
 def set_mine(ssid, on, net=None):

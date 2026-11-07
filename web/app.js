@@ -319,7 +319,7 @@ function detail(d, now) {
   const a = d.audit, inf = (a && a.info) || {};
   const facts = [
     ["Name", d.name ? d.name + " (your name)" : nameOf(d)],
-    ["Hostname", d.hostname || inf.host], ["IP address", d.ip],
+    ["Hostname", d.hostname || inf.host], ["IP address", d.ip], ["IPv6 addresses", ((a && a.ipv6) || []).join(", ")],
     ["MAC address", d.mac.startsWith("ip:") ? "" : d.mac],
     ["Vendor", d.vendor], ["Type", KIND_NAMES[d.kind] || d.kind], ["Maker", inf.maker], ["Model", inf.model],
     ["Screen size", inf.size_in ? inf.size_in + " inch" : ""],

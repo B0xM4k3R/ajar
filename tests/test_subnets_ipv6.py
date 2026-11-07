@@ -31,6 +31,42 @@ ff02::2                                       33-33-00-00-00-02  Permanent
 """
 
 
+class Neighbors(unittest.TestCase):
+    def test_linux(self):
+        got = ipv6.parse_neighbors(LINUX, "Linux")
+        self.assertEqual(got["aa:bb:cc:00:00:05"], ["2001:db8::5", "fd12:3456::5"])  # two addresses, one device
+        self.assertEqual(got["aa:bb:cc:00:00:01"], ["2001:db8::1"])                   # link-local dropped
+        self.assertNotIn("aa:bb:cc:00:00:77", got)                                    # failed entry
+        self.assertNotIn("33:33:00:00:00:01", got)                                    # multicast
+
+    def test_macos_pads_short_octets(self):
+        self.assertEqual(ipv6.parse_neighbors(MACOS, "Darwin"), {"0a:bb:cc:00:00:05": ["2001:db8::5"]})
+
+    def test_windows(self):
+        self.assertEqual(ipv6.parse_neighbors(WINDOWS, "Windows"), {"aa:bb:cc:00:00:05": ["2001:db8::5"]})
+
+    def test_unknown_system_and_garbage(self):
+        self.assertEqual(ipv6.parse_neighbors("anything", "Plan9"), {})
+        self.assertEqual(ipv6.parse_neighbors("not a table", "Linux"), {})
+        self.assertEqual(ipv6.neighbors("Plan9"), {})
+
+    def test_command_failure_is_quiet(self):
+        def boom(cmd): raise FileNotFoundError("no ip command")
+        self.assertEqual(ipv6.neighbors("Linux", run=boom), {})
+
+    def test_public_vs_private(self):
+        self.assertTrue(ipv6.is_public("2606:4700::1111"))
+        self.assertFalse(ipv6.is_public("fd12:3456::5"))
+        self.assertFalse(ipv6.is_public("nonsense"))
+
+    def test_finding_only_for_public_addresses(self):
+        f = lambda addrs: {x["id"]: x for x in aj_audit.assess({"ports": [], "shares": [], "info": {}, "ipv6": addrs})}
+        self.assertEqual(f(["fd12:3456::5"]).keys() & {"ipv6_public"}, set())
+        got = f(["2606:4700::1111", "fd12::1"])["ipv6_public"]
+        self.assertEqual(got["level"], "info")  # advice, not a point-costing problem
+        self.assertIn("2606:4700::1111", got["text"])
+
+
 def xml_for(ips):
     return ET.fromstring("<nmaprun>" + "".join(
         f"<host><status state='up'/><address addr='{ip}' addrtype='ipv4'/></host>" for ip in ips) + "</nmaprun>")

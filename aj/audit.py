@@ -13,6 +13,7 @@ from . import defaults as credlib
 from . import mitm as mitmlib
 from . import cve as cvelib
 from . import eol
+from . import ipv6 as ipv6lib
 from . import kev
 from . import prefs
 from . import netcheck
@@ -157,6 +158,10 @@ def assess(a):
                 "Distributions usually fix security bugs without changing the version number, so they may already be patched. "
                 "Run the system's updates (for example apt upgrade) to be sure.")
 
+    public6 = [x for x in a.get("ipv6", []) if ipv6lib.is_public(x)]
+    if public6:
+        add("info", "ipv6_public", f"Has a public IPv6 address ({public6[0]}{' and more' if len(public6) > 1 else ''}). IPv6 addresses aren't hidden behind NAT "
+            "the way IPv4 ones are, so make sure your router's IPv6 firewall blocks unsolicited incoming connections.")
     hits = eol.find(eol.texts_for(a))
     os_hits, certain = eol.os_hits(a)
     if certain:  # the computer told us itself
@@ -528,6 +533,14 @@ def audit(full=False):
     ssdp = ssdp_scan(state.get("own_ip"))
     ports_of = {ip: {p["port"] for p in r["ports"]} for ip, r in res.items()}
     mdns = mdns_scan(state.get("own_ip"), ips)
+    try:
+        neigh = ipv6lib.neighbors()
+    except Exception:
+        neigh = {}
+    for r in rows:
+        if neigh.get(r["mac"]) and r["ip"] in res:
+            res[r["ip"]]["ipv6"] = neigh[r["mac"]]
+
     infos = {}
     def gather_info(r):
         ip = r["ip"]

@@ -1,0 +1,16 @@
+# docker compose up -d
+# Set the password once, in a .env file next to this one:  AJAR_PASSWORD=choose-something-long
+# (optional) AJAR_VIEWER_PASSWORD=...  gives a read-only login for someone else.
+services:
+  ajar:
+    build: .
+    network_mode: host          # Ajar has to see your real network (Linux only)
+    cap_add: [NET_RAW, NET_ADMIN]
+    restart: unless-stopped
+    environment:
+      AJAR_PASSWORD: ${AJAR_PASSWORD:?set AJAR_PASSWORD in a .env file}
+      AJAR_VIEWER_PASSWORD: ${AJAR_VIEWER_PASSWORD:-}
+    volumes:
+      - ajar-data:/data
+volumes:
+  ajar-data:

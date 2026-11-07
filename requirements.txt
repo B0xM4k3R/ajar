@@ -1,0 +1,4 @@
+# Ajar needs no Python packages: it uses only the standard library (Python 3.8 or newer).
+# What it does need are programs on your computer, not Python libraries:
+#   nmap (required), openssl (for HTTPS), and on Linux: iproute2 / net-tools, ping.
+# See "Requirements" in the README.

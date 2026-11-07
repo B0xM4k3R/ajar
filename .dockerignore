@@ -1,0 +1,11 @@
+.git
+.github
+tests
+*.db
+*.db-wal
+*.db-shm
+*.auth
+*.viewer
+*.crt
+*.key
+__pycache__

@@ -86,3 +86,44 @@ class ReportEndpoint(unittest.TestCase):
             server.server_close()
 
 
+class Headers(unittest.TestCase):
+    def test_csp_blocks_inline_script_and_dashboard_has_none(self):
+        """The CSP only allows scripts from app.js, so the dashboard must not rely on inline
+        handlers (onclick=...), which the browser would silently refuse."""
+        import re as _re
+        server = aj_web.Server(("127.0.0.1", 0), aj_web.Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
+            conn.request("GET", "/index.html", headers={"Host": "localhost"})
+            r = conn.getresponse(); r.read()
+            csp = r.getheader("Content-Security-Policy", "")
+            self.assertIn("script-src 'self'", csp)
+            self.assertNotIn("script-src 'self' 'unsafe-inline'", csp)
+        finally:
+            server.shutdown(); server.server_close()
+        web = os.path.join(aj_config.HERE, "web")
+        for name in ("app.js", "index.html"):
+            with open(os.path.join(web, name), encoding="utf-8") as f:
+                text = f.read()
+            self.assertIsNone(_re.search(r"\son(click|change|input|submit|load|error)\s*=", text), name)
+            self.assertNotIn("javascript:", text)
+
+
+@unittest.skipUnless(shutil.which("openssl"), "needs openssl")
+class CertRenewal(unittest.TestCase):
+    def test_expiring_certificate_is_replaced(self):
+        import subprocess
+        d = tempfile.mkdtemp()
+        saved = aj_config.CERT_FILE, aj_config.KEY_FILE
+        aj_config.CERT_FILE, aj_config.KEY_FILE = os.path.join(d, "t.crt"), os.path.join(d, "t.key")
+        try:
+            subprocess.run([shutil.which("openssl"), "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2",
+                            "-keyout", aj_config.KEY_FILE, "-out", aj_config.CERT_FILE, "-subj", "/CN=old"],
+                           check=True, capture_output=True)
+            self.assertTrue(aj_certs.cert_expiring())
+            self.assertEqual(aj_certs.ensure_cert(), (True, "created"))  # replaced
+            self.assertFalse(aj_certs.cert_expiring())
+            self.assertEqual(aj_certs.ensure_cert(), (True, "existing"))  # and left alone afterwards
+        finally:
+            aj_config.CERT_FILE, aj_config.KEY_FILE = saved

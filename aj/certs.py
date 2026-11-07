@@ -43,11 +43,31 @@ def cert_names(lan=None):
     return names, ips
 
 
+RENEW_WITHIN_DAYS = 30
+
+
+def cert_expiring(path=None, days=RENEW_WITHIN_DAYS):
+    """True if the certificate has expired or will within `days`. False when it can't tell
+    (no openssl), so a working certificate is never thrown away on a guess."""
+    exe = find_openssl()
+    if not exe:
+        return False
+    code, _, _ = run_cmd([exe, "x509", "-in", path or config.CERT_FILE, "-noout",
+                          "-checkend", str(days * 86400)], 30)
+    return code == 1  # openssl exits 1 when the certificate will have expired by then
+
+
 def ensure_cert(lan=None):
-    """Makes sure ajar.crt and ajar.key exist. Returns (True, "existing" or
-    "created") when HTTPS can be used, or (False, reason) when it can't."""
+    """Makes sure ajar.crt and ajar.key exist and are not about to expire. Returns
+    (True, "existing" or "created") when HTTPS can be used, or (False, reason) when it can't."""
     if os.path.exists(config.CERT_FILE) and os.path.exists(config.KEY_FILE):
-        return True, "existing"
+        if not cert_expiring():
+            return True, "existing"
+        for f in (config.CERT_FILE, config.KEY_FILE):  # expiring: make a fresh pair below
+            try:
+                os.remove(f)
+            except OSError:
+                return True, "existing"  # can't replace it, so keep using it
     exe = find_openssl()
     if not exe:
         return False, "openssl was not found. " + NO_OPENSSL.get(SYSTEM, "Install openssl.")

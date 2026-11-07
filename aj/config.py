@@ -17,6 +17,7 @@ WEB = os.path.join(HERE, "web")
 DATA = os.environ.get("AJAR_DATA") or HERE
 DB = os.path.join(DATA, "ajar.db")
 AUTH_FILE = os.path.join(DATA, "ajar.auth")
+VIEWER_FILE = os.path.join(DATA, "ajar.viewer")
 CERT_FILE = os.path.join(DATA, "ajar.crt")
 KEY_FILE = os.path.join(DATA, "ajar.key")
 

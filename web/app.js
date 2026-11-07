@@ -414,6 +414,9 @@ function row(d, now) {
 
 function render(res) {
   data = res;
+  const viewer = res.role === "viewer";
+  document.body.classList.toggle("viewer", viewer);
+  $("#roleBadge").textContent = viewer ? "View only" : "";
   const { state, devices } = res;
   const online = devices.filter(d => d.online);
   const fresh = online.filter(d => !d.approved);
@@ -614,6 +617,7 @@ function renderWifi(w, now) {
 let settingsDrawn = false;
 function renderSettings(force) {
   const box = $("#settings");
+  if (data && data.role === "viewer") { box.innerHTML = `<p class="empty">Settings are only available with the main password.</p>`; return; }
   if (!data || !data.alerts) { box.innerHTML = `<p class="empty">Loading…</p>`; return; }
   if (settingsDrawn && !force) return;
   settingsDrawn = true;
@@ -623,6 +627,14 @@ function renderSettings(force) {
     <option value="medium"${v==="medium"?" selected":""}>Urgent and medium changes</option></select></label>`;
   const allowCreds = Boolean(data.security && data.security.allow_creds);
   box.innerHTML = `
+    <form class="block" data-api="viewer">
+      <b>View-only access</b>
+      <p class="intro">${data.viewer_enabled ? "A view-only password is set." : "Not set."} Share it with someone who should be able to look at the dashboard and reports, but not start scans or change anything. They also can't see your alert settings.</p>
+      <label><span>${data.viewer_enabled ? "New view-only password" : "View-only password"} (8 or more characters, different from your main one)</span>
+        <input type="password" data-k="password" autocomplete="new-password"></label>
+      <div class="actions"><button type="submit">Save</button>${data.viewer_enabled ? '<button type="button" class="quiet" data-viewer-off>Turn off</button>' : ""}<span class="msg"></span></div>
+    </form>
+
     <p class="intro">Alerts are off until you turn one on. Each channel is separate, with its own trigger level.</p>
 
     <form class="block" data-ch="defaults">
@@ -765,14 +777,20 @@ function renderProgress(st, w) {
     const onlineCount = data && data.devices ? data.devices.filter(d => d.online).length : 0;
     const what = f.deep ? "Security Scan" : "Map Network";
     
-    let actions = `<button class="quiet" style="margin-top:8px" onclick="document.querySelector('#list').scrollIntoView({behavior: 'smooth'})">View Devices</button>`;
+    let actions = `<button class="quiet" style="margin-top:8px" data-act="devices">View Devices</button>`;
     if (f.deep) {
-      actions += ` <button style="margin-top:8px" onclick="showTab('security'); window.scrollTo(0,0);">Review Security Findings</button>`;
+      actions += ` <button style="margin-top:8px" data-act="security">Review Security Findings</button>`;
     }
 
     box.innerHTML = `<div class="proghead"><b>${what} finished</b><span class="sub">took ${dur(f.took)}</span></div>
       <p>Found <b>${onlineCount}</b> devices online. Expand them in the list below for details.</p>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">${actions}</div>`;
+    box.onclick = e => {  // delegated, because a strict Content-Security-Policy blocks inline onclick
+      const act = e.target.closest("[data-act]");
+      if (!act) return;
+      if (act.dataset.act === "devices") $("#list").scrollIntoView({ behavior: "smooth" });
+      else if (act.dataset.act === "security") { showTab("security"); window.scrollTo(0, 0); }
+    };
     return;
   }
 
@@ -881,6 +899,33 @@ $("#settings").addEventListener("change", e => {
     });
   }
 });
+const API_FORMS = { schedule: "/api/schedule", prefs: "/api/prefs", viewer: "/api/viewer",
+  netsettings: () => "/api/settings" + (netQ() ? "?" + netQ() : "") };
+async function saveApiForm(form, override) {
+  const msg = form.querySelector(".msg"), kind = form.dataset.api, body = {};
+  form.querySelectorAll("[data-k]").forEach(el => {
+    body[el.dataset.k] = el.type === "checkbox" ? el.checked : el.hasAttribute("data-num") ? +el.value : el.value;
+  });
+  Object.assign(body, override || {});
+  msg.className = "msg"; msg.textContent = "Saving…";
+  try {
+    const url = typeof API_FORMS[kind] === "function" ? API_FORMS[kind]() : API_FORMS[kind];
+    const resp = await fetch(url, { method: "POST", headers: { "X-Ajar": "1", "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const r = await resp.json();
+    if (!resp.ok || r.error) throw new Error(r.error || "Couldn't save.");
+    if (kind === "schedule") data.schedule = r.schedule;
+    if (kind === "prefs") { data.prefs = r.prefs; load(true); }
+    if (kind === "viewer") { data.viewer_enabled = r.viewer_enabled; settingsDrawn = false; renderSettings(true); return; }
+    if (kind === "netsettings") {
+      const split = s => String(s || "").split(/[\s,]+/).filter(Boolean);
+      const bad = Object.values(r.problems || {}).flat();
+      data.net_settings = { segmentation_targets: split(body.segmentation_targets).filter(t => !bad.some(b => b.startsWith(t + ":"))),
+                            extra_subnets: split(body.extra_subnets).filter(t => !bad.some(b => b.startsWith(t + ":"))) };
+      if (bad.length) { msg.className = "msg bad"; msg.textContent = "Saved, except: " + bad.join("; "); return; }
+    }
+    msg.className = "msg ok"; msg.textContent = "Saved.";
+  } catch (err) { msg.className = "msg bad"; msg.textContent = err.message || "Couldn't reach Ajar."; }
+}
 $("#settings").addEventListener("submit", async e => {
   e.preventDefault();
   const form = e.target, msg = form.querySelector(".msg");
@@ -892,6 +937,7 @@ $("#settings").addEventListener("submit", async e => {
   } catch { msg.className = "msg bad"; msg.textContent = "Couldn't reach Ajar."; }
 });
 $("#settings").addEventListener("click", async e => {
+  if (e.target.hasAttribute("data-viewer-off")) return saveApiForm(e.target.closest("form"), { password: "" });
   const ch = e.target.dataset.test;
   if (!ch) return;
   const form = e.target.closest("form"), msg = form.querySelector(".msg");

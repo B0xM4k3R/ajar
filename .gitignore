@@ -11,3 +11,4 @@ __pycache__/
 *.pyc
 .backup_ui/
 *.bak
+ajar.viewer

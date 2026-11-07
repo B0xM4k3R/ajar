@@ -23,7 +23,8 @@ from .jobs import start_scan, start_wifi
 from . import alerts
 from . import netcheck
 from . import report
-from .auth import auth, check_pw, fails, good_auth
+from . import auth as authlib
+from .auth import auth
 
 
 STATIC = {  # the dashboard's files, in web/
@@ -101,8 +102,13 @@ def rename(net, mac, name):
     c.close()
 
 
+VIEWER_API = {"/api/state", "/api/events", "/api/report", "/api/ping"}  # what a view-only login may fetch
+
+
 class Handler(BaseHTTPRequestHandler):
     timeout = 60  # drop idle connections, so they can't pile up
+    role = "admin"  # set by authed(): "admin", or "viewer" for the view-only login
+    body = b""      # the request body, read at the start of do_POST
 
     def log_message(self, *args):
         pass
@@ -154,34 +160,46 @@ class Handler(BaseHTTPRequestHandler):
 
     def authed(self):
         """Checks the dashboard password. Sends the login prompt itself when it fails."""
+        self.role = "admin"
         if not auth["hash"]:
             return True
         ip = self.client_address[0]
-        now = time.time()
-        recent = [t for t in fails.get(ip, []) if now - t < 300]
-        fails[ip] = recent
-        if len(recent) >= 5:
-            self.send(429, {"error": "Too many wrong passwords. Try again in a few minutes."},
-                      extra={"Retry-After": "300"})
+        too_many = lambda: self.send(429, {"error": "Too many wrong passwords. Try again in a few minutes."},
+                                     extra={"Retry-After": str(authlib.LOCK_WINDOW)})
+        if authlib.is_locked(ip):
+            too_many()
             return False
         hdr = self.headers.get("Authorization", "")
-        ok = False
+        ok, role = False, None
         if hdr.startswith("Basic "):
             key = hashlib.sha256(hdr.encode()).hexdigest()
-            if key in good_auth:
+            role = authlib.is_good(key)
+            if role:
                 ok = True
             else:
-                try:
-                    userpass = base64.b64decode(hdr[6:]).decode("utf-8")
-                except (ValueError, UnicodeDecodeError):
-                    userpass = ""
-                ok = check_pw(userpass.split(":", 1)[1] if ":" in userpass else "", auth["hash"])
-                if ok:
-                    good_auth.add(key)
-                else:
-                    recent.append(now)
-                    time.sleep(1)  # slows down guessing
-        if not ok:
+                with authlib.verify_lock(ip):  # one password check at a time per address
+                    role = authlib.is_good(key)  # a request that was waiting may have just verified it
+                    if role:
+                        ok = True
+                    else:
+                        token = authlib.reserve_attempt(ip)  # counted before it's checked, so guesses can't beat the limit
+                        if token is None:
+                            too_many()
+                            return False
+                        try:
+                            userpass = base64.b64decode(hdr[6:]).decode("utf-8")
+                        except (ValueError, UnicodeDecodeError):
+                            userpass = ""
+                        role = authlib.check_login(userpass.split(":", 1)[1] if ":" in userpass else "")
+                        ok = bool(role)
+                        if ok:
+                            authlib.release_attempt(ip, token)
+                            authlib.remember(key, role)
+                        else:
+                            time.sleep(1)  # slows down guessing
+        if ok:
+            self.role = role
+        else:
             self.send(401, {"error": "login required"},
                       extra={"WWW-Authenticate": 'Basic realm="Ajar", charset="UTF-8"'})
         return ok
@@ -193,7 +211,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")  # no clickjacking of the Approve buttons
-        self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+        # Scripts only from our own app.js: if a device name or SSID ever slipped past escaping,
+        # the browser still would not run it. Inline styles stay allowed (the dashboard uses style=).
+        self.send_header("Content-Security-Policy",
+                         "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+                         "img-src 'self' data:; connect-src 'self'; base-uri 'none'; "
+                         "form-action 'self'; frame-ancestors 'none'")
         for k, v in (extra or {}).items():
             self.send_header(k, v)
         self.send_header("Content-Length", str(len(data)))
@@ -210,8 +233,16 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         path, q = u.path, parse_qs(u.query)
         net = q.get("net", [""])[0]
+        if self.role == "viewer" and path.startswith("/api/") and path not in VIEWER_API:
+            return self.send(403, {"error": "This is a view-only login."})
         if path == "/api/state":
-            self.send(200, snapshot(net or None))
+            snap = snapshot(net or None)
+            snap["role"] = self.role
+            if self.role == "viewer":
+                snap.pop("alerts", None)  # alert settings hold passwords, tokens and URLs
+            else:
+                snap["viewer_enabled"] = bool(auth["viewer"])
+            self.send(200, snap)
         elif path == "/api/events":
             net = known_net(net or None)
             before = q.get("before", [""])[0]
@@ -265,7 +296,20 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.send(404, {"error": "not found"})
 
+    MAX_BODY = 1_000_000
+
     def do_POST(self):
+        # Read the request body first, always. If we answered (403, 401, 429...) with the body still
+        # unread and closed the connection, the operating system would reset it and the browser
+        # would show "connection lost" instead of the reason.
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = 0
+        if n > self.MAX_BODY:
+            self.close_connection = True
+            return self.send(413, {"error": "request too large"})
+        self.body = self.rfile.read(n) if n > 0 else b""
         # A custom header forces browsers to ask permission first, which other
         # websites cannot get. This stops them from clicking Approve for you.
         if not self.host_ok():
@@ -276,6 +320,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.headers.get("X-Ajar") != "1":
             return self.send(403, {"error": "forbidden"})
+        if self.role == "viewer":
+            return self.send(403, {"error": "This is a view-only login. Sign in with the main password to change things."})
         u = urlparse(self.path)
         q = parse_qs(u.query)
         mac = q.get("mac", [""])[0]
@@ -323,6 +369,19 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200, {"ok": bool(mac and net)})
         elif u.path == "/api/rename_net":
             self.send(200, {"ok": bool(net) and rename_network(net, q.get("name", [""])[0])})
+        elif u.path == "/api/viewer":
+            body = self.read_json()
+            if not isinstance(body, dict) or not isinstance(body.get("password", ""), str):
+                return self.send(400, {"error": "bad request"})
+            if not auth["hash"]:
+                return self.send(400, {"error": "There is no main password, so there is nothing to keep view-only access apart from."})
+            if body.get("password"):
+                err = authlib.set_viewer_password(body["password"])
+                if err:
+                    return self.send(400, {"error": err})
+            else:
+                authlib.clear_viewer()
+            self.send(200, {"ok": True, "viewer_enabled": bool(auth["viewer"])})
         elif u.path == "/api/alerts":
             body = self.read_json()
             self.send(200, {"ok": True, "alerts": self.save_alerts(body)}) if body is not None \
@@ -335,8 +394,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def read_json(self):
         try:
-            n = int(self.headers.get("Content-Length") or 0)
-            return json.loads(self.rfile.read(n).decode("utf-8")) if n else {}
+            return json.loads(self.body.decode("utf-8")) if self.body else {}
         except (ValueError, UnicodeDecodeError):
             return None
 

@@ -91,7 +91,7 @@ def main():
         else:
             tls["why"] = why
     config.state["tls"] = tls
-    # threading.Thread(target=auto_scan_loop, daemon=True).start()  # DISABLED: no auto-scan on startup
+    threading.Thread(target=auto_scan_loop, daemon=True).start()  # idle unless scheduled scans are turned on in Settings
     scheme = "https" if tls["on"] else "http"
     print(f"Ajar running. On this computer open {scheme}://localhost:{config.PORT}")
     if lan:

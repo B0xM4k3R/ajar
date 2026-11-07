@@ -11,6 +11,7 @@ from .audit import audit
 from . import exposure
 from . import alerts
 from . import netcheck
+from . import schedule
 from .wifi_scan import wifi_scan
 
 
@@ -138,9 +139,38 @@ def run_once(progress=None):
     return state.get("net")
 
 
-def auto_scan_loop():
-    """Disabled: ajar no longer scans automatically. All scans start from a button click."""
-    import time
-    while True:
-        time.sleep(3600)
+_tries = {}  # when each kind of scheduled scan was last started
 
+
+def schedule_tick(now=None, start=None):
+    """One look at the clock. Sends the weekly report if it's time, and starts a scan if the
+    schedule says one is due. Returns what it started ('scan', 'audit') or None."""
+    now = now or time.time()
+    start = start or start_scan
+    net = state.get("net")
+    if net:
+        try:
+            alerts.maybe_send_weekly(net, net_name(net), now)
+        except Exception:
+            pass  # best-effort, like every alert
+    if state.get("scanning"):
+        return None
+    kind = schedule.due(now, state.get("last_scan"), state.get("last_audit"), _tries, schedule.get_schedule())
+    if not kind:
+        return None
+    _tries["scan"] = now
+    if kind == "audit":
+        _tries["audit"] = now
+    return kind if start(deep=(kind == "audit")) else None
+
+
+def auto_scan_loop():
+    """Runs the schedule. Does nothing unless it's turned on in Settings, so it is always safe
+    to start. The first look comes a minute after startup, never during it."""
+    time.sleep(60)
+    while True:
+        try:
+            schedule_tick()
+        except Exception:
+            pass  # a bad tick must never end the schedule
+        time.sleep(30)

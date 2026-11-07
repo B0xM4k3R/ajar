@@ -24,6 +24,7 @@ from .jobs import start_scan, start_wifi
 from . import alerts
 from . import netcheck
 from . import ping
+from . import schedule
 from . import report
 from . import auth as authlib
 from .auth import auth
@@ -105,7 +106,7 @@ def snapshot(net=None, expand=None):
     return {"state": {**state, "warning": warn, "now": time.time()}, "devices": rows,
             "wifi": w, "security": sec,
             "network": view, "networks": nets, "events_latest": latest_id(net) if net else 0,
-            "alerts": alerts.public_config(),
+            "alerts": alerts.public_config(), "schedule": schedule.get_schedule(),
             "health": netcheck.health_summary(net_setting(net, "health", [])) if net else None}
 
 
@@ -392,6 +393,10 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 authlib.clear_viewer()
             self.send(200, {"ok": True, "viewer_enabled": bool(auth["viewer"])})
+        elif u.path == "/api/schedule":
+            body = self.read_json()
+            self.send(200, {"ok": True, "schedule": schedule.save_schedule(body)}) if isinstance(body, dict) \
+                else self.send(400, {"error": "bad request"})
         elif u.path == "/api/alerts":
             body = self.read_json()
             self.send(200, {"ok": True, "alerts": self.save_alerts(body)}) if body is not None \

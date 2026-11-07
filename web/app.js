@@ -626,7 +626,28 @@ function renderSettings(force) {
     <option value="high"${v==="high"?" selected":""}>Urgent changes only (recommended)</option>
     <option value="medium"${v==="medium"?" selected":""}>Urgent and medium changes</option></select></label>`;
   const allowCreds = Boolean(data.security && data.security.allow_creds);
+  const sch = data.schedule || { enabled: false, scan_min: 15, audit_hours: 24 };
+  const prefs = data.prefs || { cve_lookup: true };
+  const ns = data.net_settings || { segmentation_targets: [], extra_subnets: [] };
+  const wh = a.webhook || { enabled: false, url: "", min_level: "high" };
+  const withCur = (list, cur) => (list.includes(cur) ? list : [...list, cur].sort((x, y) => x - y));
+  const opts = (list, cur, fmt) => withCur(list, cur).map(v => `<option value="${v}"${v === cur ? " selected" : ""}>${fmt(v)}</option>`).join("");
+  const mins = v => (v >= 60 ? (v / 60) + (v === 60 ? " hour" : " hours") : v + " minutes");
+  const hrs = v => (v >= 48 ? (v / 24) + " days" : v === 168 ? "week" : v + " hours");
+  const netBox = !data.network || !data.network.current;
   box.innerHTML = `
+    <form class="block" data-api="schedule">
+      <label class="switch"><input type="checkbox" data-k="enabled"${sch.enabled ? " checked" : ""}> Scheduled scans</label>
+      <p class="intro">Off by default: Ajar only scans when you press a button. Turn this on and it keeps watch by itself, so new devices and changes show up (and alert you) without you opening the page. Leave the computer running.</p>
+      <div class="fields"${sch.enabled ? "" : " hidden"}>
+        <div class="row">
+          <label><span>Quick device sweep every</span><select data-k="scan_min" data-num>${opts([5, 15, 30, 60, 180, 720], sch.scan_min, mins)}</select></label>
+          <label><span>Full services check every</span><select data-k="audit_hours" data-num>${opts([6, 12, 24, 72, 168], sch.audit_hours, hrs)}</select></label>
+        </div>
+      </div>
+      <div class="actions"><button type="submit">Save</button><span class="msg"></span></div>
+    </form>
+
     <form class="block" data-api="viewer">
       <b>View-only access</b>
       <p class="intro">${data.viewer_enabled ? "A view-only password is set." : "Not set."} Share it with someone who should be able to look at the dashboard and reports, but not start scans or change anything. They also can't see your alert settings.</p>
@@ -932,6 +953,7 @@ async function saveApiForm(form, override) {
 }
 $("#settings").addEventListener("submit", async e => {
   e.preventDefault();
+  if (e.target.dataset.api) return saveApiForm(e.target);
   const form = e.target, msg = form.querySelector(".msg");
   msg.className = "msg"; msg.textContent = "Saving…";
   try {

@@ -83,6 +83,7 @@ class Roles(unittest.TestCase):
 
     def test_admin_still_does_everything(self):
         self.enable()
+        self.assertEqual(self.call("POST", "/api/schedule", body={"enabled": False})[0], 200)
         self.assertIn("alerts", self.call("GET", "/api/state")[1])
         self.assertTrue(self.call("GET", "/api/state")[1]["viewer_enabled"])
 

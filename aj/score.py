@@ -91,20 +91,30 @@ CHECKS = [
 IOT_ACCOUNT_TIP = ("Smart-home apps ({names}): give each account a unique password and turn on two-step verification. A stolen app login is the usual way into cameras and doorbells, and no scan can see it.")
 def grade_of(score): return "A" if score >= 90 else "B" if score >= 80 else "C" if score >= 70 else "D" if score >= 60 else "F"
 
-def security_report(devices, wres, now=None, net=None, exposure=None, netcheck=None):
+def security_report(devices, wres, now=None, net=None, exposure=None, netcheck=None, accepted=None):
     now = now or time.time()
+    acc = {(i["mac"], i["id"]): i for i in (accepted or [])}  # risks the person chose to live with
+    accepted_items = []
     recent = [d for d in devices if d.get("online") or (d.get("last_seen") or 0) > now - SCORE_WINDOW]
     audited = [d for d in recent if d.get("audit")]
     issues = []
 
-    def issue(fid, who, problem, level, where="", what=""):
+    def issue(fid, who, problem, level, where="", what="", mac="net"):
+        """Adds a problem, unless it was accepted (then it's listed separately and costs nothing).
+        Returns the issue, or None if accepted."""
         title, steps = FIXES[fid]
-        issues.append({"id": fid, "who": who, "where": where, "level": level, "points": SCORE_POINTS.get(fid, 0), "problem": problem, "title": title.format(who=who, what=what), "fix": steps})
+        item = {"id": fid, "who": who, "where": where, "level": level, "points": SCORE_POINTS.get(fid, 0),
+                "problem": problem, "title": title.format(who=who, what=what), "fix": steps, "mac": mac}
+        if (mac, fid) in acc:
+            accepted_items.append({**item, "reason": acc[(mac, fid)].get("reason", ""), "accepted_at": acc[(mac, fid)].get("at")})
+            return None
+        issues.append(item)
+        return item
 
     advisories = []
     for d in audited:
         for f in assess(d["audit"]):
-            if f["id"] in SCORE_POINTS: issue(f["id"], device_label(d), f["text"], f["level"], d.get("ip", ""), f.get("what", ""))
+            if f["id"] in SCORE_POINTS: issue(f["id"], device_label(d), f["text"], f["level"], d.get("ip", ""), f.get("what", ""), mac=d.get("mac", "net"))
             elif f["id"] == "default_risk":
                 # Only show the advisory if the device hasn't been credential-tested yet
                 cred_res = d.get("audit", {}).get("default_cred_result") or {}
@@ -115,8 +125,8 @@ def security_report(devices, wres, now=None, net=None, exposure=None, netcheck=N
     fresh = [d for d in recent if d.get("online") and not d.get("approved")]
     if fresh:
         names = ", ".join(f"{device_label(d)} ({d.get('ip')})" if device_label(d) != d.get("ip") else d.get("ip") for d in fresh[:5]) + (" and more" if len(fresh) > 5 else "")
-        issue("unapproved", "Devices", f"{len(fresh)} device{'s' if len(fresh) > 1 else ''} you haven't approved yet: {names}. Unknown devices are worth a look.", "medium")
-        issues[-1]["points"] = min(UNAPPROVED_MAX, UNAPPROVED_EACH * len(fresh))
+        it = issue("unapproved", "Devices", f"{len(fresh)} device{'s' if len(fresh) > 1 else ''} you haven't approved yet: {names}. Unknown devices are worth a look.", "medium")
+        if it: it["points"] = min(UNAPPROVED_MAX, UNAPPROVED_EACH * len(fresh))
     
     iot = [d for d in recent if d.get("kind") in SMART_HOME_KINDS or (d.get("audit") and is_tv(d["audit"]))]
     people = [d for d in recent if d.get("kind") in ("personal", "this device", "pi") and d not in iot]
@@ -138,8 +148,8 @@ def security_report(devices, wres, now=None, net=None, exposure=None, netcheck=N
             if m["risky"]: issue("internet_risky", m["device"], f"The router lets anyone on the internet reach {m['device']} on {m['proto']} port {m['port']}" + (f" ({m['service']})" if m["service"] else "") + (", from one address only" if m["remote"] else "") + ".", "high", m["client"], what)
             else: others.append(f"{what} for {m['device']}")
         if others:
-            issue("internet_open", "Router", f"{len(others)} other port{'s' if len(others) > 1 else ''} open to the internet: {'; '.join(others[:5])}" + (" and more" if len(others) > 5 else "") + ".", "medium")
-            issues[-1]["points"] = min(INTERNET_OPEN_MAX, SCORE_POINTS["internet_open"] * len(others))
+            it = issue("internet_open", "Router", f"{len(others)} other port{'s' if len(others) > 1 else ''} open to the internet: {'; '.join(others[:5])}" + (" and more" if len(others) > 5 else "") + ".", "medium")
+            if it: it["points"] = min(INTERNET_OPEN_MAX, SCORE_POINTS["internet_open"] * len(others))
     
     if wres and wres.get("mine_known"):
         for f in wres["findings"]:
@@ -168,7 +178,7 @@ def security_report(devices, wres, now=None, net=None, exposure=None, netcheck=N
 
     area = lambda i: "internet" if i["id"].startswith("internet_") else "wifi" if i["who"].startswith("WiFi ") else "devices"
     by_area = {a: sum(i["points"] for i in issues if area(i) == a) for a in ("wifi", "devices", "internet")}
-    report = {"score": score, "grade": grade_of(score), "issues": issues, "checks": checks, "exposure": ex, "unscored": not have["audit"] and not have["wifi"], "partial": bool(missing), "missing": missing, "optional": optional, "lost": by_area, "wps_unknown_reason": None if have["wps"] or not have["wifi"] else "WPS can only be seen on Linux when ajar scans with iw."}
+    report = {"accepted": accepted_items, "score": score, "grade": grade_of(score), "issues": issues, "checks": checks, "exposure": ex, "unscored": not have["audit"] and not have["wifi"], "partial": bool(missing), "missing": missing, "optional": optional, "lost": by_area, "wps_unknown_reason": None if have["wps"] or not have["wifi"] else "WPS can only be seen on Linux when ajar scans with iw."}
     report["history"] = score_history(score, report["partial"], now, net) if net else []
     return report
 

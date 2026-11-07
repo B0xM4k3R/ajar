@@ -21,6 +21,7 @@ from .score import security_report
 from .networks import all_networks, current_net, rename_network
 from .events import latest_id, recent
 from .jobs import start_scan, start_wifi
+from . import accept
 from . import alerts
 from . import netcheck
 from . import ping
@@ -97,7 +98,13 @@ def snapshot(net=None, expand=None):
             **next(({k: n[k] for k in ("name", "subnet", "last_seen")} for n in nets if n["id"] == net), {})}
     sec = security_report(rows, w["result"], net=net if view["current"] else None,
                           exposure=net_setting(net, "exposure") if net else None,
-                          netcheck=net_setting(net, "netcheck") if net else None)
+                          netcheck=net_setting(net, "netcheck") if net else None,
+                          accepted=accept.get(net))
+    acc_by_mac = {}
+    for i in accept.get(net):
+        acc_by_mac.setdefault(i["mac"], []).append(i["id"])
+    for r in rows:
+        r["accepted"] = acc_by_mac.get(r["mac"], [])  # so the device list can hide what's been accepted
     sec["allow_creds"] = bool(net and net_setting(net, "allow_default_cred_checks", False))
     if expand is not None:
         for r in rows:
@@ -356,6 +363,13 @@ class Handler(BaseHTTPRequestHandler):
             if body and net:
                 if "allow_default_cred_checks" in body:
                     set_net_setting(net, "allow_default_cred_checks", bool(body["allow_default_cred_checks"]))
+                a = body.get("accept")
+                if isinstance(a, dict):
+                    from .score import FIXES
+                    accept.accept(net, a.get("mac"), a.get("id"), a.get("reason"), known_ids=set(FIXES))
+                u_ = body.get("unaccept")
+                if isinstance(u_, dict):
+                    accept.unaccept(net, u_.get("mac"), u_.get("id"))
                 if "cred_toggle" in body:
                     mac = body["cred_toggle"]
                     current = list(net_setting(net, "cred_consent", []))

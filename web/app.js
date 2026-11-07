@@ -27,7 +27,9 @@ const status = d => {
   if (bad) return "bad";
   return d.approved ? "ok" : "new";
 };
-const issuesOf = d => (d.online && d.audit ? (d.audit.findings || []).filter(f => f.level !== "info") : []);
+const issuesOf = d => (d.online && d.audit ? (d.audit.findings || []).filter(f => f.level !== "info" && !(d.accepted || []).includes(f.id)) : []);
+// Severity used for badges: known-exploited counts in full; a distribution package may already be patched.
+const cveScore = c => (c.kev ? Math.max(c.cvss, 9) : c.cvss - (c.maybe_patched ? 2 : 0));
 const cveBadge = (a) => {
   if (!a || !a.cves || !a.cves.length) return "";
   const crit = a.cves.filter(c => c.cvss >= 9.0).length;
@@ -92,7 +94,29 @@ function ring(score, size) {
 function fixItem(i, steps) {
   return `<li><span class="gain">+${i.points}</span><span><b>${esc(i.title)}</b>
     <span class="sub">${i.level === "high" ? "High risk. " : ""}${esc(i.problem)}${i.where ? ` (${esc(i.where)})` : ""}</span></span>
-    ${steps ? `<p class="how">How: ${esc(i.fix)}</p>` : ""}</li>`;
+    ${steps ? `<p class="how">How: ${esc(i.fix)}</p>` : ""}
+    ${steps && i.mac && !savedView() ? `<button class="quiet mini" data-accept="${esc(i.mac)}|${esc(i.id)}" title="Stop counting this against your score">Accept this risk</button>` : ""}</li>`;
+}
+async function setRisk(body) {
+  await fetch("/api/settings" + (netQ() ? "?" + netQ() : ""), { method: "POST",
+    headers: { "X-Ajar": "1", "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  load(true);
+}
+function acceptRisk(key) {
+  const i = key.indexOf("|"), mac = key.slice(0, i), id = key.slice(i + 1);
+  const reason = prompt("Accepting a risk stops it counting against your score. It stays listed so you can undo it.\n\nWhy is it OK? (optional)", "");
+  if (reason !== null) setRisk({ accept: { mac, id, reason } });
+}
+function undoRisk(key) {
+  const i = key.indexOf("|");
+  setRisk({ unaccept: { mac: key.slice(0, i), id: key.slice(i + 1) } });
+}
+function acceptedBlock(sec) {
+  if (!sec.accepted || !sec.accepted.length) return "";
+  return `<div class="block"><h3>Accepted risks</h3><p class="sub">You decided to live with these. They don't count against the score.</p>
+    <ul class="fixes accepted">${sec.accepted.map(i => `<li><span class="gain">–</span><span><b>${esc(i.title)}</b>
+      <span class="sub">${esc(i.problem)}${i.reason ? ` Your reason: ${esc(i.reason)}` : ""}</span></span>
+      ${savedView() ? "" : `<button class="quiet mini" data-unaccept="${esc(i.mac)}|${esc(i.id)}">Undo</button>`}</li>`).join("")}</ul></div>`;
 }
 
 function summaryLine(sec) {
@@ -226,6 +250,7 @@ function renderSecurity(sec) {
     <div class="block"><h3>Fixes, biggest first</h3>
       ${sec.issues.length ? `<ul class="fixes">${sec.issues.map(i => fixItem(i, true)).join("")}</ul>`
         : `<p class="sub">Nothing to fix in what ajar checked.</p>`}</div>
+    ${acceptedBlock(sec)}
     ${exposureBlock(sec.exposure)}
     ${sec.optional.length ? `<div class="block"><h3>Optional upgrades</h3><ul class="fixes">${sec.optional.map(t =>
       `<li><span class="gain">0</span><span>${esc(t)}</span></li>`).join("")}</ul></div>` : ""}
@@ -377,7 +402,10 @@ function detail(d, now) {
 
   return `<div class="detail"><dl>${facts.filter(f => f[1]).map(([k, v]) =>
       `<dt>${esc(k)}</dt><dd>${esc(v)}${k === "Admin page" && webUrl ? ` — <a href="${esc(webUrl)}">open it</a>` : ""}</dd>`).join("")}</dl>` +
-    (notes.length ? `<ul>${notes.map(f => `<li><span class="lvl ${f.level}">${lvl[f.level]}</span>${esc(f.text)}</li>`).join("")}</ul>` : "") +
+    (notes.length ? `<ul>${notes.map(f => {
+        const ok = (d.accepted || []).includes(f.id);
+        return `<li${ok ? ' class="accepted"' : ""}><span class="lvl ${f.level}">${lvl[f.level]}</span>${esc(f.text)}${ok ? ' <span class="tag">Accepted</span>' : ""}
+        ${f.level !== "info" && !savedView() ? `<button class="quiet mini" ${ok ? `data-unaccept="${esc(d.mac)}|${esc(f.id)}">Undo` : `data-accept="${esc(d.mac)}|${esc(f.id)}">Accept this risk`}</button>` : ""}</li>`; }).join("")}</ul>` : "") +
     cveHtml +
     probesHtml +
     (a ? shareContents(d, a) : "") +
@@ -898,7 +926,8 @@ $("#banner").addEventListener("click", e => {
 });
 $("#presence").onchange = e => { presenceShown = e.target.checked; loadEvents(true); };
 $("#security").addEventListener("click", e => {
-  if (e.target.dataset.report) downloadReport(e.target);
+  if (e.target.dataset.accept) acceptRisk(e.target.dataset.accept);
+  if (e.target.dataset.unaccept) undoRisk(e.target.dataset.unaccept);
 });
 $("#settings").addEventListener("change", e => {
   if (e.target.dataset.k === "enabled") {
@@ -984,6 +1013,8 @@ $("#approveAll").onclick = () => post("/api/approve?mac=all&" + netQ());
 $("#list").onclick = e => {
   const b = e.target.closest("button");
   if (!b) return;
+  if (b.dataset.accept) return acceptRisk(b.dataset.accept);
+  if (b.dataset.unaccept) return undoRisk(b.dataset.unaccept);
   const mac = b.dataset.mac;
   if (b.dataset.act === "toggle") {
     expanded.has(mac) ? expanded.delete(mac) : expanded.add(mac);

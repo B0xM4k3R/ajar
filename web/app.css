@@ -365,6 +365,13 @@ body { max-width: 620px; padding: 16px 16px 48px; }
   border: 2px solid var(--new) !important; 
   background: color-mix(in srgb, var(--new) 5%, var(--panel)) !important; 
 }
+/* small inline buttons, accepted risks, links styled as buttons */
+.mini { padding: 2px 9px; font-size: .78rem; margin: 4px 0 0 8px; }
+.accepted { opacity: .75; }
+a.btn { display: inline-block; padding: 7px 12px; border: 1px solid var(--line, #8884); border-radius: 8px; text-decoration: none; color: inherit; margin-right: 8px; }
+#settings textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 8px; border-radius: 8px; }
+#roleBadge:empty { display: none; }
+
 /* the view-only login: look, don't touch (the server refuses changes too; this just hides the controls) */
 body.viewer #scan, body.viewer #audit, body.viewer #fullAudit, body.viewer #wifiBtn, body.viewer #stopScan,
 body.viewer #approveAll, body.viewer [data-tab="settings"], body.viewer [data-act="approve"], body.viewer [data-act="rename"],

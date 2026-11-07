@@ -1,5 +1,5 @@
 """The services check: open ports, guest shares, OS guess, deep check, MITM, and CVEs."""
-import json, re, subprocess, time
+import json, platform, re, subprocess, time
 
 from .config import set_step, state
 from .db import db, net_setting
@@ -12,6 +12,7 @@ from . import probe as probelib
 from . import defaults as credlib
 from . import mitm as mitmlib
 from . import cve as cvelib
+from . import eol
 from . import kev
 from . import prefs
 from . import netcheck
@@ -156,6 +157,15 @@ def assess(a):
                 "Distributions usually fix security bugs without changing the version number, so they may already be patched. "
                 "Run the system's updates (for example apt upgrade) to be sure.")
 
+    hits = eol.find(eol.texts_for(a))
+    os_hits, certain = eol.os_hits(a)
+    if certain:  # the computer told us itself
+        hits += [h for h in os_hits if h["name"] not in {x["name"] for x in hits}]
+    if hits:
+        add("medium", "eol_software", f"Looks like it runs software that no longer gets security updates: {eol.describe(hits)}.")
+    elif os_hits:  # only nmap's operating-system guess says so: worth knowing, too uncertain to count against the score
+        add("info", "eol_os_guess", f"Ajar's operating-system guess for this device is {a['os']['name']}, which no longer gets security updates "
+            f"({eol.describe(os_hits)}). Guesses like this can be wrong, so it isn't counted against your score. If it really is that old, update or replace it.")
 
     known = set(PORT_NAMES) | {2323, 5555, 1883, 9999}
     other = [p for p in a.get("ports", []) if p["port"] not in known and p["port"] not in EXPECTED_PORTS]
@@ -190,7 +200,13 @@ def merge_deep(root, res):
         res[ip]["depth"] = "deep"
         done.add(ip)
     return done
+
 PROBE_WORKERS = 8  # devices probed at once: each probe mostly waits on a slow device, so this is cheap
+
+
+def own_os():
+    """What this computer actually runs, as reported by the system itself (not an nmap guess)."""
+    return {"name": f"{platform.system()} {platform.release()}".strip(), "accuracy": 100, "source": "this computer"}
 
 
 def run_parallel(fn, items, workers=PROBE_WORKERS, stop=None):
@@ -388,8 +404,11 @@ def audit(full=False):
             if ip in res and sc is not None: res[ip]["nfs"] = parse_lines(sc.get("output"))
 
     def os_stage():
+        own = state.get("own_ip")
+        if own in res:  # this computer knows its own operating system; nmap's guess about it is only a guess
+            res[own]["os"] = own_os()
         if not is_admin(): return
-        due, reuse = plan_reuse(ips, prev, "os_at", now, full)
+        due, reuse = plan_reuse([ip for ip in ips if ip != own], prev, "os_at", now, full)
         for ip in reuse:
             if prev[ip].get("os"): res[ip]["os"] = prev[ip]["os"]
             res[ip]["os_at"] = prev[ip]["os_at"]

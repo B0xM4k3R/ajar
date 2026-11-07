@@ -177,6 +177,25 @@ class Flow(unittest.TestCase):
         self.assertTrue(config.state["stop_requested"])
 
 
+class OwnDevice(Flow):
+    def test_this_computer_reports_its_own_os_and_nmap_never_guesses_it(self):
+        c = db()
+        c.execute("""INSERT INTO devices (net, mac, ip, vendor, kind, first_seen, last_seen, approved, online)
+                     VALUES (?,?,?,?,?,?,?,1,1)""", (NET, "aa:00:00:00:00:02", OWN, None, "this device", 1, time.time()))
+        c.commit(); c.close()
+        OPEN[OWN] = [8080]
+        try:
+            with mock.patch.object(aj_audit, "is_admin", lambda: True), \
+                    mock.patch.object(aj_audit, "own_os", lambda: {"name": "Linux 6.1.0", "accuracy": 100, "source": "this computer"}):
+                aj_audit.audit()
+        finally:
+            OPEN.pop(OWN, None)
+        self.assertEqual(self.audits()[OWN]["os"], {"name": "Linux 6.1.0", "accuracy": 100, "source": "this computer"})
+        for call in self.calls:
+            if "-O" in call:
+                self.assertNotIn(OWN, call)  # the OS scan skipped this computer
+
+
 class CveSwitch(Flow):
     def test_lookup_off_skips_the_check_keeps_old_results_and_says_so(self):
         from aj import prefs

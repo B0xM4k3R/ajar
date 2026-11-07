@@ -13,7 +13,7 @@ SCORE_POINTS = {
     "smb1": 15, "camera_open": 30, "admin_open": 30, "http_login_plain": 6,
     "rogue_dhcp": 30, "dhcp_gateway": 30, "dns_hijack": 30,
     "default_banner": 15, "snmp_public": 6, "ssh_legacy": 6, "default_cred_success": 30,
-    "arp_spoof": 30, "cve_critical": 30, "cve_high": 15, "cve_kev": 30, "no_isolation": 20,
+    "arp_spoof": 30, "cve_critical": 30, "cve_high": 15, "cve_kev": 30, "no_isolation": 20, "eol_software": 10,
 }
 INTERNET_OPEN_MAX, UNAPPROVED_EACH, UNAPPROVED_MAX, SCORE_WINDOW = 9, 3, 12, 7 * 86400
 
@@ -59,6 +59,7 @@ FIXES = {
     "cve_critical": ("Update {who} to patch critical CVEs", "Ajar found critical vulnerabilities (CVSS 9.0+) on this device. Check for a firmware update from the manufacturer immediately, or disconnect the device if it can't be patched."),
     "cve_kev": ("Update {who} now: attackers are exploiting a flaw in it", "CISA tracks vulnerabilities that criminals are using in real attacks right now, and this device has one. Check for a firmware or software update from the manufacturer today. If none exists, take the device off your network or put it on an isolated guest network."),
     "no_isolation": ("Fix the separation between your networks", "Devices on this network can reach devices on a network they should be kept apart from. In your router's settings, turn on client isolation or 'block access to the local network' for the guest or IoT network, or put it on its own VLAN with a firewall rule that blocks traffic to your main network. Then run the check again."),
+    "eol_software": ("Replace or update the outdated software on {who}", "Software this old no longer gets security fixes, so any flaw found in it will stay open. Update it if the maker still provides updates (a newer firmware or operating system). If not, replace the device, or move it to a guest or IoT network with no access to your main network."),
     "cve_high": ("Update {who} to patch high-risk CVEs", "Ajar found high-risk vulnerabilities (CVSS 7.0-8.9) on this device. Check for a firmware update from the manufacturer."),
     "unapproved": ("Review new devices", "Open the Devices tab, approve the devices you recognize, and rename them so you'll know them next time. Look into any you don't recognize: check your router's device list or turn devices off one at a time."),
 }
@@ -88,6 +89,7 @@ CHECKS = [
     ("SSH not offering legacy algorithms", {"ssh_legacy"}, "audit"),
     ("No ARP spoofing (Man-in-the-Middle) detected", {"arp_spoof"}, "audit"),
     ("This network is kept apart from your other networks", {"no_isolation"}, "segmentation"),
+    ("No software that no longer gets security updates", {"eol_software"}, "audit"),
     ("No vulnerabilities that attackers are actively exploiting", {"cve_kev"}, "cve"),
     ("No critical CVEs on devices", {"cve_critical"}, "cve"),
 ]

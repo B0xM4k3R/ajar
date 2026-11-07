@@ -62,3 +62,27 @@ class Https(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class ReportEndpoint(unittest.TestCase):
+    """GET /api/report once crashed with UnboundLocalError: a function-local `import re`
+    in do_GET made `re` a local name for the whole method."""
+
+    def test_report_downloads(self):
+        aj_web.db  # helpers has already pointed the database at a throwaway file
+        from aj.db import init_db
+        init_db()
+        server = aj_web.Server(("127.0.0.1", 0), aj_web.Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=20)
+            conn.request("GET", "/api/report", headers={"Host": "localhost"})
+            r = conn.getresponse()
+            body = r.read()
+            self.assertEqual(r.status, 200, body[:200])
+            self.assertIn("attachment", r.getheader("Content-Disposition", ""))
+        finally:
+            server.shutdown()
+            server.server_close()
+
+

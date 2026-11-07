@@ -40,7 +40,7 @@ def report_once(out_path=None):
     from aj.report import build_report
     migrate_legacy_files()
     init_db()
-    if os.geteuid() != 0 and config.SYSTEM != "Windows":
+    if config.SYSTEM != "Windows" and os.geteuid() != 0:
         try:
             from aj.tools import net_caps
             if not net_caps():

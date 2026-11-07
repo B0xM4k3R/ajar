@@ -224,7 +224,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200, report.build_report(data).encode("utf-8"), "text/html; charset=utf-8",
                       extra={"Content-Disposition": f'attachment; filename="{fname}"'})
         elif path == "/api/ping":
-            import subprocess, statistics, re, platform
             gw = state.get("gateway")
             if not gw:
                 # If we haven't run a network scan yet, ask the OS for the default gateway right now
@@ -287,12 +286,7 @@ class Handler(BaseHTTPRequestHandler):
             state["scanning"] = False
             state["phase"] = "Stopped by user."
             state["error"] = "Scan was stopped. Click Scan now to try again."
-            killed = tools.kill_active_nmap() if hasattr(tools, "kill_active_nmap") else False
-            import subprocess
-            try:
-                subprocess.run(["pkill", "-9", "-f", "nmap"], capture_output=True, timeout=3)
-            except Exception:
-                pass
+            killed = tools.kill_active_nmap()
             self.send(200, {"ok": True, "killed": killed})
         elif u.path == "/api/scan":
             self.send(200, {"started": start_scan()})

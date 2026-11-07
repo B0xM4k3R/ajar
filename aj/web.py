@@ -22,6 +22,7 @@ from .networks import all_networks, current_net, rename_network
 from .events import latest_id, recent
 from .jobs import start_scan, start_wifi
 from . import accept
+from . import export
 from . import alerts
 from . import netcheck
 from . import ping
@@ -135,7 +136,7 @@ def rename(net, mac, name):
     c.close()
 
 
-VIEWER_API = {"/api/state", "/api/events", "/api/report", "/api/ping"}  # what a view-only login may fetch
+VIEWER_API = {"/api/state", "/api/events", "/api/report", "/api/export", "/api/ping"}  # what a view-only login may fetch
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -296,6 +297,15 @@ class Handler(BaseHTTPRequestHandler):
             fname = "ajar-audit-" + re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-") + "-" + time.strftime("%Y%m%d") + ".html"
             self.send(200, report.build_report(data).encode("utf-8"), "text/html; charset=utf-8",
                       extra={"Content-Disposition": f'attachment; filename="{fname}"'})
+        elif path == "/api/export":
+            snap = snapshot(net or None)
+            fmt = "csv" if q.get("format", ["json"])[0] == "csv" else "json"
+            if fmt == "csv":
+                data, ctype = export.build_csv(snap), "text/csv; charset=utf-8"
+            else:
+                nid = (snap.get("network") or {}).get("id")
+                data, ctype = export.build_json(snap, recent(nid, 500, presence=False) if nid else []), "application/json"
+            self.send(200, data, ctype, extra={"Content-Disposition": f'attachment; filename="{export.filename(snap, fmt)}"'})
         elif path == "/api/ping":
             gw = state.get("gateway")
             if not gw:
@@ -436,10 +446,10 @@ class Handler(BaseHTTPRequestHandler):
         # Merge the submitted settings over the current ones, keeping a secret the user
         # left blank (the dashboard never sends existing passwords/tokens back).
         cfg = alerts.get_config()
-        for ch in ("ntfy", "email", "weekly"):
+        for ch in ("ntfy", "email", "webhook", "weekly"):
             if isinstance(body.get(ch), dict):
                 for k, v in body[ch].items():
-                    if k in cfg[ch] and not (k in ("password", "token") and v == ""):
+                    if k in cfg[ch] and not (k in ("password", "token", "secret") and v == ""):
                         cfg[ch][k] = v
         return alerts.public_config() if alerts.save_config(cfg) else None
 

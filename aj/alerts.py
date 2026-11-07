@@ -4,14 +4,20 @@ The dashboard is always the baseline (the Changes badge and banner). On top of t
 can enable any of these, independently, each with its own trigger level:
   - ntfy: a free phone push. Point it at ntfy.sh or your own server; no account needed.
   - email: through your own mail account (SMTP).
+  - webhook: a JSON POST to a URL you choose (Home Assistant, n8n, Node-RED, your own script),
+    signed with a secret so the receiver can check it came from Ajar.
 
 Nothing leaves the Pi unless you switch a channel on and say where to send it. Levels:
 "high" sends only High changes (a camera left open, a risky port opened to the internet,
 the router replaced); "medium" sends High and Medium; presence (devices coming and going)
 never alerts.
 """
+import hashlib
+import hmac
+import json
 import smtplib
 import ssl
+import time
 import urllib.error
 import urllib.request
 from email.message import EmailMessage
@@ -28,6 +34,7 @@ def default_config():
         "ntfy": {"enabled": False, "server": "https://ntfy.sh", "topic": "", "token": "", "min_level": "high"},
         "email": {"enabled": False, "host": "", "port": 587, "security": "starttls",
                   "user": "", "password": "", "to": "", "min_level": "high"},
+        "webhook": {"enabled": False, "url": "", "secret": "", "min_level": "high"},
         "weekly": {"enabled": False, "day": 6, "hour": 8, "ntfy": False, "email": True},
     }
 
@@ -47,6 +54,8 @@ def save_config(cfg):
         if isinstance(cfg.get(k), dict):
             clean[k].update({kk: vv for kk, vv in cfg[k].items() if kk in clean[k]})
     clean["email"]["port"] = int(clean["email"]["port"] or 587)
+    url = str(clean["webhook"]["url"] or "").strip()[:500]
+    clean["webhook"]["url"] = url if url.lower().startswith(("http://", "https://")) else ""
     set_setting("alerts", clean)
     return clean
 
@@ -58,6 +67,8 @@ def public_config():
     cfg["email"]["has_password"] = bool(get_config()["email"]["password"])
     cfg["ntfy"]["token"] = ""
     cfg["ntfy"]["has_token"] = bool(get_config()["ntfy"]["token"])
+    cfg["webhook"]["secret"] = ""
+    cfg["webhook"]["has_secret"] = bool(get_config()["webhook"]["secret"])
     return cfg
 
 
@@ -122,7 +133,27 @@ def send_email(cfg, subject, body):
     return True
 
 
-def deliver(cfg, channel, title, body, priority="default"):
+def send_webhook(cfg, title, body, priority="default", events=None, network=None, now=None):
+    """POSTs a JSON message to the configured URL. If a secret is set, the body is signed:
+    X-Ajar-Signature: sha256=HMAC-SHA256(secret, body). Raises on failure."""
+    url = (cfg.get("url") or "").strip()
+    if not url.lower().startswith(("http://", "https://")):
+        raise ValueError("No webhook URL set (it must start with http:// or https://).")
+    payload = {"source": "ajar", "title": title, "body": body, "priority": priority, "network": network,
+               "sent_at": int(now or time.time()),
+               "events": [{k: e.get(k) for k in ("id", "at", "kind", "level", "mac", "text")} for e in (events or [])]}
+    data = json.dumps(payload).encode("utf-8")
+    headers = {"Content-Type": "application/json", "User-Agent": "ajar-network-audit"}
+    if cfg.get("secret"):
+        headers["X-Ajar-Signature"] = "sha256=" + hmac.new(cfg["secret"].encode("utf-8"), data, hashlib.sha256).hexdigest()
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(urllib.request.Request(url, data=data, headers=headers, method="POST"), timeout=10) as r:
+        return 200 <= r.status < 300
+
+
+def deliver(cfg, channel, title, body, priority="default", events=None, network=None):
+    if channel == "webhook":
+        return send_webhook(cfg["webhook"], title, body, priority, events, network)
     if channel == "ntfy":
         return send_ntfy(cfg["ntfy"], title, body, priority, tags="warning" if priority == "high" else "bell")
     if channel == "email":
@@ -139,7 +170,7 @@ def dispatch(net, net_name=None, cfg=None):
     cfg = cfg or get_config()
     name = net_name or net
     out = {}
-    for channel in ("ntfy", "email"):
+    for channel in ("ntfy", "email", "webhook"):
         c = cfg[channel]
         if not c.get("enabled"):
             continue
@@ -153,7 +184,7 @@ def dispatch(net, net_name=None, cfg=None):
             title, body, priority = summarize(wanted)
             body += f"\n\nNetwork: {name}"
             try:
-                deliver(cfg, channel, f"{name}: {title}", body, priority)
+                deliver(cfg, channel, f"{name}: {title}", body, priority, events=wanted, network=name)
                 out[channel] = len(wanted)
                 set_net_setting(net, f"alert_seen_{channel}", newest)
             except Exception:
@@ -168,7 +199,7 @@ def send_test(channel, cfg=None):
     cfg = cfg or get_config()
     try:
         deliver(cfg, channel, "Test alert", "This is a test from Ajar. If you got this, alerts are working.", "default")
-        return True, "Sent. Check your " + ("phone" if channel == "ntfy" else "inbox") + "."
+        return True, "Sent. Check your " + {"ntfy": "phone", "webhook": "receiving service"}.get(channel, "inbox") + "."
     except Exception as e:
         return False, str(e)
 

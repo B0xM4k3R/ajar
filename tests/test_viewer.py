@@ -65,7 +65,7 @@ class Roles(unittest.TestCase):
         self.assertNotIn("alerts", snap)                       # tokens, SMTP passwords, webhook URLs
         self.assertNotIn("net_settings", snap)
         self.assertNotIn("viewer_enabled", snap)
-        for path in ("/api/events", "/api/report"):
+        for path in ("/api/events", "/api/export", "/api/export?format=csv", "/api/report"):
             self.assertEqual(self.call("GET", path, "viewer-password")[0], 200, path)
         for path, body in (("/api/scan", {}), ("/api/audit", {}), ("/api/stop", {}), ("/api/approve?mac=x", {}),
                            ("/api/settings", {"allow_default_cred_checks": True}), ("/api/alerts", {"ntfy": {"enabled": True}}),

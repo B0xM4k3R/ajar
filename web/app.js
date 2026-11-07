@@ -733,6 +733,17 @@ function renderSettings(force) {
       <div class="actions"><button type="submit">Save</button><button type="button" class="quiet" data-test="email">Send test</button><span class="msg"></span></div>
     </form>
 
+    <form class="block" data-ch="webhook">
+      <label class="switch"><input type="checkbox" data-k="enabled"${wh.enabled ? " checked" : ""}> Webhook</label>
+      <p class="intro">Sends each alert as a JSON message to a web address you choose (Home Assistant, n8n, Node-RED, your own script). If you set a secret, every message is signed so your receiver can check it came from Ajar (header X-Ajar-Signature, HMAC-SHA256).</p>
+      <div class="fields"${wh.enabled ? "" : " hidden"}>
+        <label><span>URL</span><input type="text" data-k="url" value="${esc(wh.url || "")}" placeholder="https://homeassistant.local/api/webhook/ajar"></label>
+        <label><span>Secret (optional)</span><input type="password" data-k="secret" placeholder="${wh.has_secret ? "•••••• (set)" : ""}"></label>
+        ${lvl(wh.min_level || "high")}
+      </div>
+      <div class="actions"><button type="submit">Save</button><button type="button" class="quiet" data-test="webhook">Send test</button><span class="msg"></span></div>
+    </form>
+
     <form class="block" data-ch="weekly">
       <label class="switch"><input type="checkbox" data-k="enabled"${a.weekly.enabled?" checked":""}> Weekly report</label>
       <p class="intro">A plain-English Sunday summary: your score, new devices, what changed, and the top fixes still open.</p>

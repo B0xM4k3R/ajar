@@ -850,7 +850,11 @@ const netQ = () => (data && data.network && data.network.id ? "net=" + enc(data.
 async function load(force) {
   if (renaming && !force) return;
   let res;
-  try { res = await (await fetch("/api/state" + (viewNet ? "?net=" + enc(viewNet) : ""))).json(); }
+  // slim=1: the server sends full detail only for the devices that are open, which keeps the
+  // 5-second refresh small. Opening a device reloads straight away to get its detail.
+  const qs = ["slim=1", ...(viewNet ? ["net=" + enc(viewNet)] : []),
+              ...(expanded.size ? ["expand=" + [...expanded].map(enc).join(",")] : [])].join("&");
+  try { res = await (await fetch("/api/state?" + qs)).json(); }
   catch { $("#sub").textContent = "Cannot reach Ajar. Check that it is running."; return; }
   try { render(res); renderNetbar(res); loadEvents(false); if (!$("#settings").hidden) renderSettings(false); }
   catch (e) { $("#sub").textContent = "The dashboard hit a display problem: " + e.message + ". Please report it."; console.error(e); }
@@ -962,6 +966,7 @@ $("#list").onclick = e => {
   if (b.dataset.act === "toggle") {
     expanded.has(mac) ? expanded.delete(mac) : expanded.add(mac);
     render(data);
+    if (expanded.has(mac)) load(true);  // fetch this device's full detail now, not at the next refresh
   }
   if (b.dataset.act === "approve") post("/api/approve?mac=" + enc(mac) + "&" + netQ());
   if (b.dataset.act === "rename") { renaming = mac; render(data); }

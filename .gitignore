@@ -4,6 +4,8 @@ ajar.auth
 ajar.crt
 ajar.key
 *.db
+*.db-wal
+*.db-shm
 *.auth
 
 # Python cache

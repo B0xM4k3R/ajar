@@ -19,8 +19,12 @@ DEVICE_COLS = """mac TEXT, ip TEXT, hostname TEXT, vendor TEXT, kind TEXT,
 
 
 def db():
-    c = sqlite3.connect(config.DB)
+    # A scan writes while the dashboard reads. Wait for a lock instead of failing with
+    # "database is locked"; WAL (switched on in init_db) lets readers and the writer coexist.
+    c = sqlite3.connect(config.DB, timeout=15)
     c.row_factory = sqlite3.Row
+    c.execute("PRAGMA busy_timeout=15000")
+    c.execute("PRAGMA synchronous=NORMAL")
     return c
 
 
@@ -45,6 +49,10 @@ def migrate_legacy_files():
 
 def init_db():
     c = db()
+    try:
+        c.execute("PRAGMA journal_mode=WAL")  # persists in the file; harmless to repeat
+    except sqlite3.DatabaseError:
+        pass  # some filesystems can't do WAL: the default journal still works
     c.execute(f"""CREATE TABLE IF NOT EXISTS devices (net TEXT NOT NULL, {DEVICE_COLS},
         PRIMARY KEY (net, mac))""")
     have = {r["name"] for r in c.execute("PRAGMA table_info(devices)")}

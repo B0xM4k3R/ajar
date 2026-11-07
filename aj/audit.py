@@ -177,6 +177,31 @@ def merge_deep(root, res):
         res[ip]["depth"] = "deep"
         done.add(ip)
     return done
+PROBE_WORKERS = 8  # devices probed at once: each probe mostly waits on a slow device, so this is cheap
+
+
+def run_parallel(fn, items, workers=PROBE_WORKERS, stop=None):
+    """Runs fn(item) for every item on a few threads and returns [(item, exception)] for the ones
+    that failed. One bad device never stops the rest. If stop() turns true, items not yet started
+    are skipped."""
+    errors = []
+    if not items:
+        return errors
+    from concurrent.futures import ThreadPoolExecutor
+
+    def safe(item):
+        if stop and stop():
+            return
+        try:
+            fn(item)
+        except Exception as e:  # noqa: BLE001 - reported to the caller, not hidden
+            errors.append((item, e))
+
+    with ThreadPoolExecutor(max_workers=max(1, min(workers, len(items)))) as ex:
+        list(ex.map(safe, items))
+    return errors
+
+
 
 def audit_changes(before, after, name):
     if not before or "ports" not in before: return []
@@ -313,30 +338,34 @@ def audit(full=False):
             if ip in res and sc is not None:
                 cves = cvelib.parse_vulners(sc)
                 if cves: res[ip]["cves"] = cves
+    stopped = lambda: state.get("stop_requested")
+    row_by_ip = {x["ip"]: x for x in rows}
 
     def probe_stage():
-        for ip, r in res.items():
-            if ip == state.get("own_ip"): continue
+        def one(ip):
+            r = res[ip]
             ports = {p["port"] for p in r["ports"]}
-            if not ports: continue
-            row = next((x for x in rows if x["ip"] == ip), {})
+            row = row_by_ip.get(ip, {})
             try_snmp = row.get("kind") == "router" or r.get("upnp_igd") or 161 in ports
             probes = probelib.probe_device(ip, ports, try_snmp=try_snmp)
             if probes:
                 r["probes"] = probes
                 r["fingerprint"] = probelib.fingerprint(probes)
+        errs = run_parallel(one, [ip for ip, r in res.items() if ip != state.get("own_ip") and r["ports"]], stop=stopped)
+        if errs: notes.append(f"Probe: {len(errs)} device(s) could not be probed")
 
     def login_stage():
-        for ip, r in res.items():
-            if ip == state.get("own_ip"): continue
+        def one(ip):
+            r = res[ip]
             ports = {p["port"] for p in r["ports"]}
-            web = set(weakauth.WEB_PORTS) & ports
-            if web:
+            if set(weakauth.WEB_PORTS) & ports:
                 info = weakauth.check_web(ip, ports)
                 if info: r["web"] = info
             if ports & {554, 8554}:
                 rt = weakauth.probe_rtsp(ip, 554 if 554 in ports else 8554)
                 if rt: r["rtsp"] = rt
+        errs = run_parallel(one, [ip for ip in res if ip != state.get("own_ip")], stop=stopped)
+        if errs: notes.append(f"Login check: {len(errs)} device(s) could not be checked")
 
     def cred_stage():
         if not net_setting(net, "allow_default_cred_checks", False): return
@@ -393,6 +422,22 @@ def audit(full=False):
     ssdp = ssdp_scan(state.get("own_ip"))
     ports_of = {ip: {p["port"] for p in r["ports"]} for ip, r in res.items()}
     mdns = mdns_scan(state.get("own_ip"), ips)
+    infos = {}
+    def gather_info(r):
+        ip = r["ip"]
+        seen = ssdp.get(ip, {"st": set(), "loc": None})
+        sources = []
+        if 8001 in ports_of[ip]: sources.append(samsung_info(ip))
+        if seen["loc"]: sources.append(upnp_info(ip, seen["loc"]))
+        if ip in mdns: sources.append(mdns_info(mdns[ip]))
+        info = {}
+        for src in sources:
+            for k, v in src.items():
+                if v and k not in info: info[k] = v
+        size = size_from_model(info.get("model"))
+        if size: info["size_in"] = size
+        infos[ip] = info
+    run_parallel(gather_info, rows, stop=stopped)
 
     set_step(6, "Probing what's behind open ports")
     stage("Probe", probe_stage)
@@ -422,17 +467,7 @@ def audit(full=False):
         seen = ssdp.get(r["ip"], {"st": set(), "loc": None})
         a["upnp_igd"] = any("InternetGatewayDevice" in st for st in seen["st"])
         a["upnp_media"] = any("MediaServer" in st for st in seen["st"])
-        sources = []
-        if 8001 in ports_of[r["ip"]]: sources.append(samsung_info(r["ip"]))
-        if seen["loc"]: sources.append(upnp_info(r["ip"], seen["loc"]))
-        if r["ip"] in mdns: sources.append(mdns_info(mdns[r["ip"]]))
-        info = {}
-        for src in sources:
-            for k, v in src.items():
-                if v and k not in info: info[k] = v
-        size = size_from_model(info.get("model"))
-        if size: info["size_in"] = size
-        a["info"] = info
+        a["info"] = infos.get(r["ip"], {})
         a["scanned"] = stamp
         a.setdefault("depth", "common")
         a["findings"] = assess(a)

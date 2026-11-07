@@ -1,5 +1,6 @@
 """The dashboard's web server and API."""
 import base64
+import gzip
 import hashlib
 import ipaddress
 import json
@@ -48,9 +49,27 @@ def known_net(net):
     return net if net in nets else current_net()
 
 
-def snapshot(net=None):
+HEAVY_AUDIT_KEYS = ("probes", "ftp_files")  # large, and only shown when a device is expanded
+
+
+def slim_audit(a):
+    """A device's audit without the bulky parts: banners and probe results, and the file listings of
+    shares and FTP. Everything the device row and the badges need stays."""
+    if not isinstance(a, dict):
+        return a
+    out = {k: v for k, v in a.items() if k not in HEAVY_AUDIT_KEYS}
+    if a.get("shares"):
+        out["shares"] = [{k: v for k, v in s.items() if k != "files"} for s in a["shares"]]
+    return out
+
+
+def snapshot(net=None, expand=None):
     """Everything the dashboard shows, for one network: the current one by default,
-    or saved results for another."""
+    or saved results for another.
+
+    expand=None gives the full detail for every device (reports use this). A set of MACs gives
+    the compact form the 5-second refresh uses: full detail only for those devices (the ones the
+    person has open), and a slim audit for the rest. The score is always worked out from the full data."""
     here = current_net()
     net = known_net(net) if net else here
     c = db()
@@ -78,6 +97,10 @@ def snapshot(net=None):
                           exposure=net_setting(net, "exposure") if net else None,
                           netcheck=net_setting(net, "netcheck") if net else None)
     sec["allow_creds"] = bool(net and net_setting(net, "allow_default_cred_checks", False))
+    if expand is not None:
+        for r in rows:
+            if r["mac"] not in expand:
+                r["audit"] = slim_audit(r["audit"])
     return {"state": {**state, "warning": warn, "now": time.time()}, "devices": rows,
             "wifi": w, "security": sec,
             "network": view, "networks": nets, "events_latest": latest_id(net) if net else 0,
@@ -206,9 +229,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def send(self, code, body, ctype="application/json", extra=None):
         data = body if isinstance(body, bytes) else json.dumps(body).encode()
+        gz = ctype == "application/json" and len(data) > 1400 and "gzip" in self.headers.get("Accept-Encoding", "")
+        if gz:
+            data = gzip.compress(data, 5)
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Cache-Control", "no-store")
+        if gz:
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Vary", "Accept-Encoding")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")  # no clickjacking of the Approve buttons
         # Scripts only from our own app.js: if a device name or SSID ever slipped past escaping,
@@ -236,7 +265,10 @@ class Handler(BaseHTTPRequestHandler):
         if self.role == "viewer" and path.startswith("/api/") and path not in VIEWER_API:
             return self.send(403, {"error": "This is a view-only login."})
         if path == "/api/state":
-            snap = snapshot(net or None)
+            expand = None
+            if q.get("slim", [""])[0] == "1":  # the dashboard's refresh: detail only for open devices
+                expand = set(list(filter(None, q.get("expand", [""])[0].split(",")))[:200])
+            snap = snapshot(net or None, expand)
             snap["role"] = self.role
             if self.role == "viewer":
                 snap.pop("alerts", None)  # alert settings hold passwords, tokens and URLs

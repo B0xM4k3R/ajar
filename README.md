@@ -79,7 +79,7 @@ If you want Ajar to start on boot and run continuously in the background:
 ```bash
 sudo ./setup.sh
 ```
-This sets up a locked-down systemd service (it drops root privileges and keeps only the two network capabilities nmap needs). See the build guide, Part 7.
+This sets up a locked-down systemd service (it drops root privileges and keeps only the two network capabilities nmap needs).
 
 ### Run it in Docker (Linux)
 

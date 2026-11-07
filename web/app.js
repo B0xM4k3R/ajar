@@ -32,8 +32,10 @@ const issuesOf = d => (d.online && d.audit ? (d.audit.findings || []).filter(f =
 const cveScore = c => (c.kev ? Math.max(c.cvss, 9) : c.cvss - (c.maybe_patched ? 2 : 0));
 const cveBadge = (a) => {
   if (!a || !a.cves || !a.cves.length) return "";
-  const crit = a.cves.filter(c => c.cvss >= 9.0).length;
-  const high = a.cves.filter(c => c.cvss >= 7.0 && c.cvss < 9.0).length;
+  const exploited = a.cves.filter(c => c.kev).length;
+  const crit = a.cves.filter(c => !c.kev && cveScore(c) >= 9.0).length;
+  const high = a.cves.filter(c => !c.kev && cveScore(c) >= 7.0 && cveScore(c) < 9.0).length;
+  if (exploited) return `<span class="tag high">Exploited in the wild</span>`;
   if (crit) return `<span class="tag high">${crit} Critical CVE${crit>1?'s':''}</span>`;
   if (high) return `<span class="tag medium">${high} High CVE</span>`;
   return "";
@@ -351,7 +353,10 @@ function detail(d, now) {
   let cveHtml = "";
   if (a && a.cves && a.cves.length) {
     cveHtml = `<h4 style="color:var(--high)">Vulnerabilities</h4><ul class="files">` +
-      a.cves.map(c => `<li class="risk"><span class="fn">${esc(c.id)}</span><span class="tag high">CVSS ${c.cvss}</span></li>`).join("") + `</ul>`;
+      a.cves.map(c => `<li class="risk"><span class="fn">${esc(c.id)}</span><span class="tag ${c.kev || cveScore(c) >= 9 ? "high" : "medium"}">CVSS ${c.cvss}</span>
+        ${c.kev ? '<span class="tag high">Attackers are using this now</span>' : ""}
+        ${c.maybe_patched && !c.kev ? `<span class="tag" title="Linux distributions usually fix security bugs without changing the version number, so this match may be a false alarm. Run the system's updates to be sure.">May already be patched by ${esc(c.vendor || "your distribution")}</span>` : ""}
+        ${c.port ? `<span class="sub">port ${c.port}</span>` : ""}</li>`).join("") + `</ul>`;
   }
 
   // --- Probes ---
@@ -673,6 +678,12 @@ function renderSettings(force) {
           <label><span>Full services check every</span><select data-k="audit_hours" data-num>${opts([6, 12, 24, 72, 168], sch.audit_hours, hrs)}</select></label>
         </div>
       </div>
+      <div class="actions"><button type="submit">Save</button><span class="msg"></span></div>
+    </form>
+
+    <form class="block" data-api="prefs">
+      <label class="switch"><input type="checkbox" data-k="cve_lookup"${prefs.cve_lookup ? " checked" : ""}> Look up known vulnerabilities online</label>
+      <p class="intro">To match your devices' software against known security flaws, Ajar sends the software names and versions it found (like "Apache 2.4.49") to vulners.com, and downloads CISA's public list of flaws attackers are exploiting. Nothing else about your network leaves it. Turn this off to keep everything local: results already found are kept, and the score shows this check as "not checked".</p>
       <div class="actions"><button type="submit">Save</button><span class="msg"></span></div>
     </form>
 

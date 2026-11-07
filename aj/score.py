@@ -13,7 +13,7 @@ SCORE_POINTS = {
     "smb1": 15, "camera_open": 30, "admin_open": 30, "http_login_plain": 6,
     "rogue_dhcp": 30, "dhcp_gateway": 30, "dns_hijack": 30,
     "default_banner": 15, "snmp_public": 6, "ssh_legacy": 6, "default_cred_success": 30,
-    "arp_spoof": 30, "cve_critical": 30, "cve_high": 15,
+    "arp_spoof": 30, "cve_critical": 30, "cve_high": 15, "cve_kev": 30,
 }
 INTERNET_OPEN_MAX, UNAPPROVED_EACH, UNAPPROVED_MAX, SCORE_WINDOW = 9, 3, 12, 7 * 86400
 
@@ -57,6 +57,7 @@ FIXES = {
     "default_cred_success": ("Change {who}'s factory default password NOW", "Its admin login accepted a documented factory default credential, so anyone on your network can log in and change its settings. Open its admin page, set a strong unique password, and check for unknown changes or users."),
     "arp_spoof": ("Investigate possible ARP spoofing", "Your router's address is answering with a different device than before, which can mean someone is intercepting traffic (a Man-in-the-Middle attack). If you didn't replace or reset your router, disconnect devices you don't recognize and restart the router."),
     "cve_critical": ("Update {who} to patch critical CVEs", "Ajar found critical vulnerabilities (CVSS 9.0+) on this device. Check for a firmware update from the manufacturer immediately, or disconnect the device if it can't be patched."),
+    "cve_kev": ("Update {who} now: attackers are exploiting a flaw in it", "CISA tracks vulnerabilities that criminals are using in real attacks right now, and this device has one. Check for a firmware or software update from the manufacturer today. If none exists, take the device off your network or put it on an isolated guest network."),
     "cve_high": ("Update {who} to patch high-risk CVEs", "Ajar found high-risk vulnerabilities (CVSS 7.0-8.9) on this device. Check for a firmware update from the manufacturer."),
     "unapproved": ("Review new devices", "Open the Devices tab, approve the devices you recognize, and rename them so you'll know them next time. Look into any you don't recognize: check your router's device list or turn devices off one at a time."),
 }
@@ -85,13 +86,14 @@ CHECKS = [
     ("SNMP not on the default 'public' community string", {"snmp_public"}, "audit"),
     ("SSH not offering legacy algorithms", {"ssh_legacy"}, "audit"),
     ("No ARP spoofing (Man-in-the-Middle) detected", {"arp_spoof"}, "audit"),
-    ("No critical CVEs on devices", {"cve_critical"}, "audit"),
+    ("No vulnerabilities that attackers are actively exploiting", {"cve_kev"}, "cve"),
+    ("No critical CVEs on devices", {"cve_critical"}, "cve"),
 ]
 
 IOT_ACCOUNT_TIP = ("Smart-home apps ({names}): give each account a unique password and turn on two-step verification. A stolen app login is the usual way into cameras and doorbells, and no scan can see it.")
 def grade_of(score): return "A" if score >= 90 else "B" if score >= 80 else "C" if score >= 70 else "D" if score >= 60 else "F"
 
-def security_report(devices, wres, now=None, net=None, exposure=None, netcheck=None, accepted=None):
+def security_report(devices, wres, now=None, net=None, exposure=None, netcheck=None, accepted=None, cve_lookup=True):
     now = now or time.time()
     acc = {(i["mac"], i["id"]): i for i in (accepted or [])}  # risks the person chose to live with
     accepted_items = []
@@ -159,7 +161,7 @@ def security_report(devices, wres, now=None, net=None, exposure=None, netcheck=N
     score = max(0, 100 - lost)
     issues.sort(key=lambda i: (-i["points"], {"high": 0, "medium": 1}.get(i["level"], 2), i["title"]))
 
-    have = {"wifi": bool(wres and wres.get("mine_known")), "wps": bool(wres and wres.get("mine_known") and wres.get("source") == "iw"), "audit": bool(audited), "devices": bool(recent), "exposure": bool(ex and ex.get("status") in ("listed", "no_upnp")), "netcheck": bool(netcheck)}
+    have = {"cve": bool(audited) and cve_lookup, "wifi": bool(wres and wres.get("mine_known")), "wps": bool(wres and wres.get("mine_known") and wres.get("source") == "iw"), "audit": bool(audited), "devices": bool(recent), "exposure": bool(ex and ex.get("status") in ("listed", "no_upnp")), "netcheck": bool(netcheck)}
     failed = {i["id"] for i in issues}
     checks = []
     for label, ids, need in CHECKS:

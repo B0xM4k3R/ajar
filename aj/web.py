@@ -25,6 +25,7 @@ from . import accept
 from . import alerts
 from . import netcheck
 from . import ping
+from . import prefs
 from . import schedule
 from . import report
 from . import auth as authlib
@@ -99,7 +100,7 @@ def snapshot(net=None, expand=None):
     sec = security_report(rows, w["result"], net=net if view["current"] else None,
                           exposure=net_setting(net, "exposure") if net else None,
                           netcheck=net_setting(net, "netcheck") if net else None,
-                          accepted=accept.get(net))
+                          accepted=accept.get(net), cve_lookup=prefs.get_prefs()["cve_lookup"])
     acc_by_mac = {}
     for i in accept.get(net):
         acc_by_mac.setdefault(i["mac"], []).append(i["id"])
@@ -113,7 +114,7 @@ def snapshot(net=None, expand=None):
     return {"state": {**state, "warning": warn, "now": time.time()}, "devices": rows,
             "wifi": w, "security": sec,
             "network": view, "networks": nets, "events_latest": latest_id(net) if net else 0,
-            "alerts": alerts.public_config(), "schedule": schedule.get_schedule(),
+            "alerts": alerts.public_config(), "schedule": schedule.get_schedule(), "prefs": prefs.get_prefs(),
             "health": netcheck.health_summary(net_setting(net, "health", [])) if net else None}
 
 
@@ -407,6 +408,10 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 authlib.clear_viewer()
             self.send(200, {"ok": True, "viewer_enabled": bool(auth["viewer"])})
+        elif u.path == "/api/prefs":
+            body = self.read_json()
+            self.send(200, {"ok": True, "prefs": prefs.save_prefs(body)}) if isinstance(body, dict) \
+                else self.send(400, {"error": "bad request"})
         elif u.path == "/api/schedule":
             body = self.read_json()
             self.send(200, {"ok": True, "schedule": schedule.save_schedule(body)}) if isinstance(body, dict) \

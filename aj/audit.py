@@ -12,6 +12,8 @@ from . import probe as probelib
 from . import defaults as credlib
 from . import mitm as mitmlib
 from . import cve as cvelib
+from . import kev
+from . import prefs
 from . import netcheck
 from .identify import mdns_info, mdns_scan, samsung_info, size_from_model, ssdp_scan, upnp_info
 
@@ -135,14 +137,25 @@ def assess(a):
     for f in a.get("extra_findings", []): add(f["level"], f["id"], f["text"])
     cves = a.get("cves", [])
     if cves:
-        critical = [c for c in cves if c["cvss"] >= 9.0]
-        high = [c for c in cves if 7.0 <= c["cvss"] < 9.0]
+        listed = lambda cs: ", ".join(c["id"] for c in cs[:3]) + (" and more" if len(cs) > 3 else "")
+        exploited = [c for c in cves if c.get("kev")]
+        if exploited:
+            add("high", "cve_kev", f"Attackers are known to be exploiting: {listed(exploited)} (on CISA's list of actively exploited vulnerabilities).")
+        rest = [c for c in cves if not c.get("kev")]
+        critical = [c for c in rest if cvelib.effective_cvss(c) >= 9.0]
+        high = [c for c in rest if 7.0 <= cvelib.effective_cvss(c) < 9.0]
         if critical:
-            names = ", ".join(c["id"] for c in critical[:3]) + (" and more" if len(critical) > 3 else "")
-            add("high", "cve_critical", f"Critical vulnerabilities found: {names}.")
+            add("high", "cve_critical", f"Critical vulnerabilities found: {listed(critical)}.")
         elif high:
-            names = ", ".join(c["id"] for c in high[:3]) + (" and more" if len(high) > 3 else "")
-            add("medium", "cve_high", f"High-risk vulnerabilities found: {names}.")
+            add("medium", "cve_high", f"High-risk vulnerabilities found: {listed(high)}.")
+        # Matches made from a version number on software that came from a Linux distribution.
+        maybe = [c for c in rest if c.get("maybe_patched") and c["cvss"] >= 7.0]
+        if maybe:
+            vendor = maybe[0].get("vendor", "your Linux distribution")
+            add("info", "cve_maybe_patched", f"{len(maybe)} of these ({listed(maybe)}) were matched by version number on software packaged by {vendor}. "
+                "Distributions usually fix security bugs without changing the version number, so they may already be patched. "
+                "Run the system's updates (for example apt upgrade) to be sure.")
+
 
     known = set(PORT_NAMES) | {2323, 5555, 1883, 9999}
     other = [p for p in a.get("ports", []) if p["port"] not in known and p["port"] not in EXPECTED_PORTS]
@@ -201,6 +214,77 @@ def run_parallel(fn, items, workers=PROBE_WORKERS, stop=None):
         list(ex.map(safe, items))
     return errors
 
+
+def plan_cve_reuse(hosts, res, prev, now, force=False):
+    """Splits hosts into (due, reuse). A host's CVE result is reused for a week as long as its
+    set of open ports hasn't changed; any new or closed port means the services changed."""
+    due, reuse = [], []
+    for ip in hosts:
+        p = prev.get(ip) or {}
+        same = {x["port"] for x in p.get("ports", [])} == {x["port"] for x in res[ip]["ports"]}
+        fresh = p.get("cve_at") and now - p["cve_at"] < REUSE_FOR
+        (reuse if fresh and same and not force else due).append(ip)
+    return due, reuse
+
+
+def cve_scan(res, prev, own_ip, now, full=False, nmap=None, say=None, kev_ids=None):
+    """Looks up known vulnerabilities for the open services on each device (nmap's vulners script).
+    Results are kept in res[ip]["cves"] and stamped res[ip]["cve_at"]; recent results are reused.
+    Every open port found on any device is checked, including the ones the deep scan found, and the
+    check only runs on devices that need it. Each CVE records its port, whether the service looks
+    like a Linux-distribution package (so a version match may be a false alarm), and whether it is
+    on CISA's actively-exploited list (kev_ids). Returns (checked, reused).
+
+    A device is only stamped as checked when the vulners script demonstrably ran in this batch
+    (at least one device produced vulners output). If it produced nothing at all, as when
+    the script can't reach its database, nothing is stamped, so the next scan tries again instead
+    of trusting a week-old "no vulnerabilities"."""
+    nmap = nmap or run_nmap
+    say = say or (lambda text: None)
+    hosts = [ip for ip, r in res.items() if r["ports"] and ip != own_ip]
+    due, reuse = plan_cve_reuse(hosts, res, prev, now, full)
+    for ip in reuse:
+        if prev[ip].get("cves"):
+            res[ip]["cves"] = prev[ip]["cves"]
+        if prev[ip].get("versions"):
+            res[ip]["versions"] = prev[ip]["versions"]
+        res[ip]["cve_at"] = prev[ip]["cve_at"]
+    scanned, worked = set(), False
+    if due:
+        ports = ",".join(str(n) for n in sorted({p["port"] for ip in due for p in res[ip]["ports"]}))
+        say(f"Checking for known CVEs on {len(due)} device(s)" + (f", reusing {len(reuse)} from the last week" if reuse else ""))
+        root = nmap(["-Pn", "-sV", "--version-light", "-T4", "--max-retries", "1", "--host-timeout", "60s",
+                     "--script", "vulners", "-p", ports] + due, 600)
+        for h in root.findall("host"):
+            ip = host_ip(h)
+            if ip not in res or ip not in due or h.find("ports") is None:
+                continue
+            scanned.add(ip)
+            per_port, versions = [], {}
+            for port in h.findall("ports/port"):
+                svc = port.find("service")
+                if svc is not None:  # what nmap says is running, e.g. "Apache httpd 2.2.22 (Debian)"
+                    text = " ".join(x for x in (svc.get("product"), svc.get("version"), svc.get("extrainfo")) if x)
+                    if text:
+                        versions[port.get("portid", "0")] = text[:120]
+                sc = port.find("script[@id='vulners']")
+                if sc is None:
+                    continue
+                worked = True
+                per_port.append((int(port.get("portid", 0)), cvelib.parse_vulners(sc),
+                                 cvelib.distro_of(svc.attrib if svc is not None else {})))
+            if versions:
+                res[ip]["versions"] = versions
+            cves = cvelib.merge(per_port)
+            if cves:
+                res[ip]["cves"] = cves
+        if worked:
+            for ip in scanned:
+                res[ip]["cve_at"] = now
+    for r in res.values():  # the exploited list changes daily, so tag reused results too
+        for c in r.get("cves", []):
+            c["kev"] = c["id"].upper() in (kev_ids or ())
+    return len(scanned), len(reuse)
 
 
 def audit_changes(before, after, name):
@@ -331,16 +415,16 @@ def audit(full=False):
         for ip in merge_deep(root, res): res[ip]["deep_at"] = now
 
     def vuln_stage():
-        hosts = [ip for ip, r in res.items() if r["ports"] and ip != state.get("own_ip")]
-        if not hosts: return
-        state["phase"] = f"Checking for known CVEs on {len(hosts)} device(s)"
-        root = run_nmap(["-Pn", "-sV", "--version-light", "-T4", "--max-retries", "1", "--host-timeout", "60s", "--script", "vulners", "-p", PORTS] + hosts, 600)
-        for h in root.findall("host"):
-            ip = host_ip(h)
-            sc = find_script(h, "vulners")
-            if ip in res and sc is not None:
-                cves = cvelib.parse_vulners(sc)
-                if cves: res[ip]["cves"] = cves
+        if not prefs.get_prefs()["cve_lookup"]:
+            for ip, r in res.items():  # keep what was known; don't make it look like there is nothing
+                p = prev.get(ip) or {}
+                if p.get("cves"): r["cves"] = p["cves"]
+                if p.get("cve_at"): r["cve_at"] = p["cve_at"]
+            notes.append("CVE lookups are turned off in Settings, so vulnerabilities were not checked this time.")
+            return
+        cve_scan(res, prev, state.get("own_ip"), now, full, say=lambda t: state.update(phase=t),
+                 kev_ids=kev.get_ids(now))
+
     stopped = lambda: state.get("stop_requested")
     row_by_ip = {x["ip"]: x for x in rows}
 

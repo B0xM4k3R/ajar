@@ -33,6 +33,17 @@ class Subnets(unittest.TestCase):
             self.assertEqual(kept, [], text)
             self.assertIn(why, rejected[0][1], text)
 
+    def test_only_the_three_private_ranges_count(self):
+        """Not 0.0.0.0/x, 100.64/10, 192.0.0.x or 172.32/12: ipaddress's is_private disagrees about these
+        between Python versions, and 0.0.0.0/24 used to be accepted as 'private'."""
+        for ok in ("10.9.8.0/24", "172.16.0.0/24", "172.31.255.0/24", "192.168.200.0/24"):
+            self.assertEqual(subnets.clean([ok], None)[0], [ok], ok)
+        for bad in ("0.0.0.0/24", "100.64.0.0/24", "172.15.255.0/24", "172.32.0.0/24", "192.0.0.0/24", "192.169.0.0/24",
+                    "198.51.100.0/24", "224.0.0.0/24", "255.255.255.0/24"):
+            kept, rejected = subnets.clean([bad], None)
+            self.assertEqual(kept, [], bad)
+            self.assertIn("private", rejected[0][1], bad)
+
     def test_limit_overlap_and_duplicates(self):
         kept, rejected = subnets.clean([f"10.0.{i}.0/24" for i in range(6)], None, limit=3)
         self.assertEqual(len(kept), 3)

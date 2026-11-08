@@ -3,6 +3,10 @@ Only private IPv4 ranges of up to 256 addresses, so a typo can't turn into a sca
 or of a huge range."""
 import ipaddress
 
+# The three private IPv4 ranges (RFC 1918). Checked directly rather than through ipaddress's is_private,
+# whose answer for edge ranges (0.0.0.0/x, 100.64/10, 192.0.0.x) differs between Python versions.
+PRIVATE_RANGES = [ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")]
+
 
 def clean(raw, own_subnet=None, limit=4, min_prefix=24):
     """Returns (kept, rejected). kept: normalized CIDR strings. rejected: [(text, reason)]."""
@@ -24,7 +28,7 @@ def clean(raw, own_subnet=None, limit=4, min_prefix=24):
             continue
         if net.version != 4:
             reason = "only IPv4 networks are supported"
-        elif not net.is_private or net.is_loopback or net.is_link_local or net.is_multicast:
+        elif not any(net.subnet_of(p) for p in PRIVATE_RANGES):
             reason = "only private home or office ranges (192.168.x.x, 10.x.x.x, 172.16-31.x.x)"
         elif net.prefixlen < min_prefix:
             reason = f"too large: use /{min_prefix} or smaller (at most {2 ** (32 - min_prefix)} addresses)"

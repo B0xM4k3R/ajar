@@ -10,41 +10,26 @@ jobs:
     runs-on: ${{ matrix.os }}
     # Linux is the supported platform and must pass. macOS and Windows are run so problems show up,
     # but don't block a merge while their coverage is still being proven out.
-    continue-on-error: ${{ matrix.os != 'ubuntu-latest' && matrix.os != 'ubuntu-22.04' }}
+    continue-on-error: ${{ !startsWith(matrix.os, 'ubuntu') }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        python: ["3.9", "3.12"]
+        # Listed one by one because "ubuntu-latest" moves on (it is now a release with no Python 3.8/3.9 builds),
+        # and the README promises Python 3.8 or newer, so 3.8 and 3.9 must be tested on releases that have them.
         include:
-          - os: ubuntu-22.04   # the README promises Python 3.8 or newer
-            python: "3.8"
+          - {os: ubuntu-latest, python: "3.12"}
+          - {os: ubuntu-24.04, python: "3.9"}
+          - {os: ubuntu-22.04, python: "3.8"}
+          - {os: macos-latest, python: "3.12"}
+          - {os: macos-latest, python: "3.9"}
+          - {os: windows-latest, python: "3.12"}
+          - {os: windows-latest, python: "3.9"}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+      - name: Check every file compiles on this Python
+        run: python -m compileall -q aj ajar.py tests
       - name: Run the tests (they fake nmap, so it isn't needed here)
         run: python -m unittest discover -s tests -v
-
-  syntax-3-8:
-    name: Python 3.8 syntax
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Parse every file as Python 3.8
-        run: |
-          python - <<'PY'
-          import ast, glob, sys
-          bad = []
-          for f in glob.glob("aj/*.py") + ["ajar.py"]:
-              try:
-                  ast.parse(open(f, encoding="utf-8").read(), feature_version=(3, 8))
-              except SyntaxError as e:
-                  bad.append(f"{f}:{e.lineno}: {e.msg}")
-          print("\n".join(bad) or "ok")
-          sys.exit(1 if bad else 0)
-          PY
